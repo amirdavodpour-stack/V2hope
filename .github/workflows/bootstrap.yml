@@ -207,7 +207,32 @@ jobs:
             echo "IMPORT_COMMIT_SKIPPED_PASS"
           else
             git commit -m "Import final HOPE release staging project"
+
+            # actions/checkout configures GITHUB_TOKEN as an http.extraheader.
+            # Remove that credential before using the dedicated repository token.
+            git config --local --unset-all http.https://github.com/.extraheader || true
+
+            # Fail clearly if the dedicated token was not injected.
+            test -n "$REPO_WORKFLOW_TOKEN" || {
+              echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
+              exit 1
+            }
+
+            # Use the dedicated token explicitly for the push.
             git remote set-url origin "https://x-access-token:${REPO_WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+            # Verify the authenticated identity without printing the token.
+            AUTH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}'               -H "Authorization: Bearer ${REPO_WORKFLOW_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/user")"
+            case "$AUTH_STATUS" in
+              200|204)
+                echo "REPO_TOKEN_AUTH_PASS"
+                ;;
+              *)
+                echo "ERROR: REPO_WORKFLOW_TOKEN authentication failed (HTTP $AUTH_STATUS)." >&2
+                exit 1
+                ;;
+            esac
+
             git push origin "HEAD:${GITHUB_REF_NAME}"
             echo "IMPORT_PUSH_PASS"
           fi
@@ -240,6 +265,11 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          test -n "$GH_TOKEN" || {
+            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
+            exit 1
+          }
+
           gh workflow run staging-certification.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${GITHUB_REF_NAME}"
@@ -256,6 +286,11 @@ jobs:
 
           test "$CONFIRM" = "release" || {
             echo "ERROR: mode=release requires confirm=release." >&2
+            exit 1
+          }
+
+          test -n "$GH_TOKEN" || {
+            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
             exit 1
           }
 
