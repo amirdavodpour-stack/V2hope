@@ -1,0 +1,181 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: hope
+      POSTGRES_USER: hope
+      POSTGRES_PASSWORD: hope
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hope -d hope"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - staging-postgres:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: staging-minio
+      MINIO_ROOT_PASSWORD: staging-minio-password-0123456789
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - staging-minio:/data
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-03-12T17-29-24Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >-
+      mc alias set staging http://minio:9000 staging-minio staging-minio-password-0123456789
+      && mc mb --ignore-existing staging/hope
+      && mc anonymous set none staging/hope
+
+  provider-sim:
+    build:
+      context: ./providers
+    environment:
+      PAYMENT_PROVIDER_TOKEN: ${PAYMENT_PROVIDER_TOKEN:-local-staging-payment-token-0123456789}
+      NOTIFICATION_PROVIDER_TOKEN: ${NOTIFICATION_PROVIDER_TOKEN:-local-staging-notify-token-0123456789}
+    volumes:
+      - staging-provider-certs:/certs
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('https://127.0.0.1:3443/create',{method:'POST',headers:{authorization:'Bearer '+(process.env.PAYMENT_PROVIDER_TOKEN||'local-staging-payment-token-0123456789'),'content-type':'application/json'},body:'{}',signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.status===200||r.status===400?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  staging-init:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      provider-sim:
+        condition: service_healthy
+    environment:
+      NODE_ENV: staging
+      PORT: 3000
+      DATABASE_URL: postgres://hope:hope@postgres:5432/hope
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-staging-access-secret-012345678901234567890123}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-staging-refresh-secret-012345678901234567890123}
+      METRICS_TOKEN: ${METRICS_TOKEN:-local-staging-metrics-token-0123456789}
+      RATE_LIMIT_STORE: postgres
+      STORAGE_BACKEND: s3
+      S3_BUCKET: hope
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: staging-minio
+      AWS_SECRET_ACCESS_KEY: staging-minio-password-0123456789
+      PAYMENT_PROVIDER: webhook
+      PAYMENT_PROVIDER_TOKEN: ${PAYMENT_PROVIDER_TOKEN:-local-staging-payment-token-0123456789}
+      PAYMENT_PROVIDER_CREATE_URL: ${PAYMENT_PROVIDER_CREATE_URL:-https://provider-sim:3443/create}
+      PAYMENT_PROVIDER_RELEASE_URL: ${PAYMENT_PROVIDER_RELEASE_URL:-https://provider-sim:3443/release}
+      PAYMENT_PROVIDER_REFUND_URL: ${PAYMENT_PROVIDER_REFUND_URL:-https://provider-sim:3443/refund}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-local-staging-webhook-secret-0123456789}
+      NOTIFICATION_PUSH_URL: ${NOTIFICATION_PUSH_URL:-https://provider-sim:3443/push}
+      NOTIFICATION_EMAIL_URL: ${NOTIFICATION_EMAIL_URL:-https://provider-sim:3443/email}
+      NOTIFICATION_PROVIDER_TOKEN: ${NOTIFICATION_PROVIDER_TOKEN:-local-staging-notify-token-0123456789}
+      RESET_TOKEN_DELIVERY_MODE: webhook
+      NODE_EXTRA_CA_CERTS: /run/provider-certs/provider.crt
+      RESET_TOKEN_DELIVERY_URL: ${RESET_TOKEN_DELIVERY_URL:-https://provider-sim:3443/email}
+      RESET_TOKEN_DELIVERY_SECRET: ${RESET_TOKEN_DELIVERY_SECRET:-local-staging-reset-delivery-secret-012345678901234567890123}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://staging.invalid}
+      ALLOWED_CORS_ORIGINS: ${ALLOWED_CORS_ORIGINS:-https://staging.invalid}
+    command: ["sh", "-lc", "node src/migrate.js && node src/seed.js"]
+
+  api1:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      staging-init:
+        condition: service_completed_successfully
+    environment: &api-env
+      NODE_ENV: staging
+      PORT: 3000
+      DATABASE_URL: postgres://hope:hope@postgres:5432/hope
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-local-staging-access-secret-012345678901234567890123}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-local-staging-refresh-secret-012345678901234567890123}
+      METRICS_TOKEN: ${METRICS_TOKEN:-local-staging-metrics-token-0123456789}
+      RATE_LIMIT_STORE: postgres
+      STORAGE_BACKEND: s3
+      S3_BUCKET: hope
+      S3_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+      S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: staging-minio
+      AWS_SECRET_ACCESS_KEY: staging-minio-password-0123456789
+      PAYMENT_PROVIDER: webhook
+      PAYMENT_PROVIDER_TOKEN: ${PAYMENT_PROVIDER_TOKEN:-local-staging-payment-token-0123456789}
+      PAYMENT_PROVIDER_CREATE_URL: ${PAYMENT_PROVIDER_CREATE_URL:-https://provider-sim:3443/create}
+      PAYMENT_PROVIDER_RELEASE_URL: ${PAYMENT_PROVIDER_RELEASE_URL:-https://provider-sim:3443/release}
+      PAYMENT_PROVIDER_REFUND_URL: ${PAYMENT_PROVIDER_REFUND_URL:-https://provider-sim:3443/refund}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-local-staging-webhook-secret-0123456789}
+      NOTIFICATION_PUSH_URL: ${NOTIFICATION_PUSH_URL:-https://provider-sim:3443/push}
+      NOTIFICATION_EMAIL_URL: ${NOTIFICATION_EMAIL_URL:-https://provider-sim:3443/email}
+      NOTIFICATION_PROVIDER_TOKEN: ${NOTIFICATION_PROVIDER_TOKEN:-local-staging-notify-token-0123456789}
+      RESET_TOKEN_DELIVERY_MODE: webhook
+      NODE_EXTRA_CA_CERTS: /run/provider-certs/provider.crt
+      RESET_TOKEN_DELIVERY_URL: ${RESET_TOKEN_DELIVERY_URL:-https://provider-sim:3443/email}
+      RESET_TOKEN_DELIVERY_SECRET: ${RESET_TOKEN_DELIVERY_SECRET:-local-staging-reset-delivery-secret-012345678901234567890123}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://staging.invalid}
+      ALLOWED_CORS_ORIGINS: ${ALLOWED_CORS_ORIGINS:-https://staging.invalid}
+      TRUST_PROXY: "true"
+      STAGING_INSTANCE_ID: api1
+    volumes:
+      - staging-provider-certs:/run/provider-certs:ro
+    command: ["node", "src/server.js"]
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api2:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      staging-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *api-env
+      STAGING_INSTANCE_ID: api2
+    volumes:
+      - staging-provider-certs:/run/provider-certs:ro
+    command: ["node", "src/server.js"]
+
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ./nginx/staging.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  staging-postgres:
+  staging-minio:
+  staging-provider-certs:

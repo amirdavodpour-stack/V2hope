@@ -1,0 +1,175 @@
+16:  const { rows } = await requirePool().query(`SELECT ${userSelect} FROM users WHERE email=$1`, [email]);
+20:  const { rows } = await requirePool().query(`SELECT ${userSelect} FROM users WHERE id=$1`, [id]);
+25:    await client.query(`INSERT INTO users(id,email,password_hash,display_name,role,status,session_version,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, [user.id,user.email,user.passwordHash,user.displayName,user.role,user.status,user.sessionVersion || 0,user.createdAt]);
+26:    await client.query(`INSERT INTO providers(id,user_id,provider_type,capacity,verification_status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7)`, [provider.id,provider.userId,provider.providerType,provider.capacity,provider.verificationStatus,provider.createdAt,provider.updatedAt]);
+35:  const { rows } = await client.query(`SELECT * FROM jobs WHERE id=$1`, [id]);
+42:  const { rows } = await requirePool().query(`SELECT * FROM jobs WHERE ${where} ORDER BY updated_at DESC`, params);
+46:  const { rows } = await requirePool().query(`INSERT INTO jobs(id,owner_id,provider_id,title,description,category_id,job_type,budget_type,budget_min,budget_max,duration,acceptance_criteria,status,city,kind,visibility,schedule,monthly_salary,application_deadline,created_at,updated_at,published_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) RETURNING *`, [job.id,job.ownerId,job.providerId,job.title,job.description,job.categoryId,job.jobType,job.budgetType,job.budgetMin,job.budgetMax,job.duration,job.acceptanceCriteria,job.status,job.city,job.kind || (job.jobType==='FIXED'?'MISSION':'JOB'),job.visibility || 'PUBLIC',job.schedule || null,job.monthlySalary ?? null,job.applicationDeadline || null,job.createdAt,job.updatedAt,job.publishedAt]);
+60:      const {rows}=await client.query(`UPDATE jobs SET ${sets.join(',')} WHERE id=$1 RETURNING *`, values);
+67:  const { rows } = await client.query(`SELECT * FROM offers WHERE job_id=$1 ORDER BY created_at ASC`, [jobId]);
+71:  const { rows } = await client.query(`SELECT * FROM offers WHERE id=$1`, [id]);
+75:export async function insertJobApplication(a) { const {rows}=await requirePool().query(`INSERT INTO job_applications(id,job_id,candidate_id,resume_text,skills,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[a.id,a.jobId,a.candidateId,a.resumeText,a.skills||'',a.status||'PENDING',a.createdAt,a.updatedAt]); return applicationFromRow(rows[0]); }
+76:export async function findJobApplication(jobId,candidateId) { const {rows}=await requirePool().query(`SELECT * FROM job_applications WHERE job_id=$1 AND candidate_id=$2 AND status IN ('PENDING','SELECTED') LIMIT 1`,[jobId,candidateId]); return rows[0]?applicationFromRow(rows[0]):null; }
+80:    INSERT INTO notification_preferences(id,user_id) VALUES(gen_random_uuid(),$1)
+91:  const {rows}=await requirePool().query(`UPDATE notification_preferences SET in_app=$2,push=$3,email=$4,job_alerts=$5,application_updates=$6,payment_updates=$7,marketing=$8,updated_at=NOW() WHERE user_id=$1 RETURNING id,user_id,in_app,push,email,job_alerts,application_updates,payment_updates,marketing,updated_at`,[userId,!!next.inApp,!!next.push,!!next.email,!!next.jobAlerts,!!next.applicationUpdates,!!next.paymentUpdates,!!next.marketing]);
+95:  const {rows}=await requirePool().query(`SELECT * FROM notifications WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,[userId,Math.min(Math.max(Number(limit)||50,1),100),Math.max(Number(offset)||0,0)]);
+99:  const {rows}=await requirePool().query(`UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=$1 AND user_id=$2 RETURNING *`,[id,userId]);
+102:export async function markAllNotificationsRead(userId) { const {rowCount}=await requirePool().query(`UPDATE notifications SET read_at=COALESCE(read_at,NOW()) WHERE user_id=$1 AND read_at IS NULL`,[userId]); return {updated:rowCount}; }
+103:export async function countUnreadNotifications(userId) { const {rows}=await requirePool().query(`SELECT COUNT(*)::int AS count FROM notifications WHERE user_id=$1 AND read_at IS NULL`,[userId]); return Number(rows[0]?.count||0); }
+105:  const {rows}=await requirePool().query(`INSERT INTO notification_devices(id,user_id,platform,token,enabled) VALUES($1,$2,$3,$4,$5) ON CONFLICT(token) DO UPDATE SET user_id=EXCLUDED.user_id,platform=EXCLUDED.platform,enabled=EXCLUDED.enabled,updated_at=NOW() RETURNING *`,[id,userId,platform,token,enabled]);
+110:  const {rows}=await requirePool().query(`SELECT id,user_id,platform,token,enabled,created_at,updated_at FROM notification_devices WHERE user_id=$1 AND enabled=true ORDER BY updated_at DESC`,[userId]);
+114:  const {rows}=await requirePool().query(`SELECT email FROM users WHERE id=$1 LIMIT 1`,[userId]);
+118:  const {rows}=await requirePool().query(`UPDATE notification_devices SET enabled=false,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *`,[id,userId]);
+125:    if(dedupeKey){const {rows:existing}=await client.query(`SELECT * FROM notifications WHERE user_id=$1 AND (data->>'dedupeKey')=$2 ORDER BY created_at DESC LIMIT 1`,[userId,dedupeKey]); if(existing[0]) return {notification:{id:existing[0].id,userId:existing[0].user_id,type:existing[0].type,title:existing[0].title,body:existing[0].body,data:existing[0].data||{},readAt:existing[0].read_at,createdAt:existing[0].created_at},created:false};}
+127:    const {rows}=await client.query(`INSERT INTO notifications(id,user_id,type,title,body,data,created_at) VALUES($1,$2,$3,$4,$5,$6::jsonb,NOW()) RETURNING *`,[id,userId,type,title,body,JSON.stringify(payload)]);
+131:      await client.query(`INSERT INTO outbox_events(id,event_type,aggregate_type,aggregate_id,dedupe_key,payload,status,attempts,available_at,created_at) VALUES($1,'NOTIFICATION_DISPATCH','notification',$2,$3,$4::jsonb,'PENDING',0,NOW(),NOW()) ON CONFLICT(dedupe_key) DO NOTHING`,[eventId,id,`NOTIFICATION:${id}:${ch}`,JSON.stringify({notificationId:id,userId,type,channel:ch,title,body,data})]);
+140:      (SELECT COUNT(*) FROM users)::int AS users,
+141:      (SELECT COUNT(*) FROM users WHERE role='ADMIN')::int AS admins,
+142:      (SELECT COUNT(*) FROM users WHERE role='USER' AND status='ACTIVE')::int AS active_users,
+143:      (SELECT COUNT(*) FROM users WHERE status<>'ACTIVE')::int AS suspended_users,
+144:      (SELECT COUNT(*) FROM jobs)::int AS opportunities,
+145:      (SELECT COUNT(*) FROM jobs WHERE status='PUBLISHED')::int AS published_opportunities,
+146:      (SELECT COUNT(*) FROM jobs WHERE status='DRAFT')::int AS draft_opportunities,
+147:      (SELECT COUNT(*) FROM jobs WHERE kind='MISSION')::int AS missions,
+148:      (SELECT COUNT(*) FROM jobs WHERE kind='JOB')::int AS jobs,
+149:      (SELECT COUNT(*) FROM job_applications)::int AS applications,
+150:      (SELECT COUNT(*) FROM job_applications WHERE status IN ('PENDING','SHORTLISTED'))::int AS pending_applications,
+151:      (SELECT COUNT(*) FROM audit_logs)::int AS audit_events
+156:  const { rows } = await requirePool().query(`SELECT ${userSelect} FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2`, [Math.min(Math.max(Number(limit)||100,1),200), Math.max(Number(offset)||0,0)]);
+160:  const { rows } = await requirePool().query(`UPDATE users SET status=$2, session_version=session_version+1 WHERE id=$1 RETURNING ${userSelect}`, [id,status]);
+164:  const { rows } = await requirePool().query(`SELECT a.id,a.action,a.actor_id,a.entity_type,a.entity_id,a.meta,a.created_at,u.display_name AS actor_name FROM audit_logs a LEFT JOIN users u ON u.id=a.actor_id ORDER BY a.created_at DESC LIMIT $1 OFFSET $2`, [Math.min(Math.max(Number(limit)||100,1),200), Math.max(Number(offset)||0,0)]);
+171:    const {rows}=await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`,[id]);
+175:    const {rows:u}=await client.query(`UPDATE jobs SET status=$2,updated_at=NOW(),published_at=CASE WHEN $2='PUBLISHED' THEN COALESCE(published_at,NOW()) ELSE published_at END WHERE id=$1 RETURNING *`,[id,toStatus]);
+180:export async function listAdminApplications() { const {rows}=await requirePool().query(`SELECT a.*, j.title AS job_title, u.display_name AS candidate_name FROM job_applications a JOIN jobs j ON j.id=a.job_id JOIN users u ON u.id=a.candidate_id ORDER BY a.created_at DESC`); return rows.map(r=>({...applicationFromRow(r),jobTitle:r.job_title,candidateName:r.candidate_name})); }
+183:  const {rows}=await requirePool().query(`UPDATE job_applications SET status=$2,updated_at=NOW() WHERE id=$1 AND status = ANY($3::text[]) RETURNING *`,[id,toStatus,statuses]);
+187:export async function listForwardedCandidatesForJob(jobId) { const {rows}=await requirePool().query(`SELECT id,resume_text,skills,status,created_at,updated_at FROM job_applications WHERE job_id=$1 AND status IN ('FORWARDED','INTERVIEW','OFFERED','ACCEPTED') ORDER BY updated_at DESC`,[jobId]); return rows.map(employerCandidateFromRow); }
+190:export async function getJobApplicationById(id) { const {rows}=await requirePool().query(`SELECT * FROM job_applications WHERE id=$1`,[id]); return rows[0]?applicationFromRow(rows[0]):null; }
+191:export async function getJobApplicationForCandidate(id,candidateId) { const {rows}=await requirePool().query(`SELECT * FROM job_applications WHERE id=$1 AND candidate_id=$2`,[id,candidateId]); return rows[0]?applicationFromRow(rows[0]):null; }
+192:export async function listCandidateApplications(candidateId) { const {rows}=await requirePool().query(`SELECT a.*, j.title AS job_title, j.city AS job_city, j.kind AS job_kind, j.category_id, j.monthly_salary FROM job_applications a JOIN jobs j ON j.id=a.job_id WHERE a.candidate_id=$1 ORDER BY a.updated_at DESC`,[candidateId]); return rows.map(r=>({...applicationFromRow(r),jobTitle:r.job_title,jobCity:r.job_city,jobKind:r.job_kind,categoryId:r.category_id,monthlySalary:r.monthly_salary})); }
+193:export async function transitionCandidateApplication(id, candidateId, fromStatuses, toStatus) { const statuses=Array.isArray(fromStatuses)?fromStatuses:[fromStatuses]; const {rows}=await requirePool().query(`UPDATE job_applications SET status=$3,updated_at=NOW() WHERE id=$1 AND candidate_id=$2 AND status = ANY($4::text[]) RETURNING *`,[id,candidateId,toStatus,statuses]); return rows[0]?applicationFromRow(rows[0]):null; }
+197:    const {rows}=await client.query(`SELECT a.*,j.owner_id,j.kind FROM job_applications a JOIN jobs j ON j.id=a.job_id WHERE a.id=$1 FOR UPDATE`,[id]);
+203:      const {rows:accepted}=await client.query(`SELECT id FROM job_applications WHERE job_id=$1 AND status='ACCEPTED' FOR UPDATE`,[a.job_id]);
+206:    const {rows:updated}=await client.query(`UPDATE job_applications SET status=$2,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,toStatus]);
+211:        `UPDATE jobs
+224:export async function listAdminJobs() { const {rows}=await requirePool().query(`SELECT * FROM jobs ORDER BY created_at DESC`); return rows.map(jobFromRow); }
+225:export async function deleteJob(id) { const {rowCount}=await requirePool().query(`DELETE FROM jobs WHERE id=$1`,[id]); return rowCount>0; }
+228:  const { rows } = await requirePool().query(`INSERT INTO offers(id,job_id,provider_id,price,message,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [offer.id,offer.jobId,offer.providerId,offer.price,offer.message,offer.status,offer.createdAt,offer.updatedAt]);
+251:    const {rows:users}=await client.query(`SELECT ${userSelect} FROM users WHERE id=$1`,[r.user_id]);
+263:  const { rows } = await requirePool().query(`UPDATE users SET session_version=session_version+1 WHERE id=$1 RETURNING session_version`, [userId]);
+278:    const {rows:u}=await client.query(`SELECT ${userSelect} FROM users WHERE id=$1`,[r.user_id]);
+286:    await client.query(`UPDATE users SET password_hash=$2,session_version=session_version+1 WHERE id=$1`,[userId,passwordHash]);
+292:  const {rows}=await requirePool().query(`SELECT * FROM providers WHERE user_id=$1`,[userId]);
+296:  const {rows}=await requirePool().query(`INSERT INTO providers(id,user_id,provider_type,capacity,verification_status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(user_id) DO UPDATE SET provider_type=EXCLUDED.provider_type,capacity=EXCLUDED.capacity,verification_status=EXCLUDED.verification_status,updated_at=EXCLUDED.updated_at RETURNING *`,[provider.id,provider.userId,provider.providerType,provider.capacity,provider.verificationStatus,provider.createdAt,provider.updatedAt]);
+299:export async function insertUpload(upload) { const {rows}=await requirePool().query(`INSERT INTO uploads(id,storage_key,uploaded_by,content_type,size,created_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,[upload.id,upload.storageKey,upload.uploadedBy,upload.contentType,upload.size,upload.createdAt]); const r=rows[0]; return {id:r.id,storageKey:r.storage_key,uploadedBy:r.uploaded_by,contentType:r.content_type,size:r.size,createdAt:r.created_at?.toISOString?.() ?? r.created_at}; }
+301:  const {rows}=await client.query(`SELECT * FROM uploads WHERE storage_key=$1`,[key]); const r=rows[0]; return r?{id:r.id,storageKey:r.storage_key,uploadedBy:r.uploaded_by,contentType:r.content_type,size:r.size,createdAt:r.created_at?.toISOString?.() ?? r.created_at}:null;
+313:    const {rows:existing}=await client.query(`SELECT * FROM uploads WHERE storage_key=$1`,[key]); if(existing[0]){await client.query(`DELETE FROM upload_intents WHERE id=$1`,[intentId]); return {existing:true,upload:{id:existing[0].id,storageKey:existing[0].storage_key,uploadedBy:existing[0].uploaded_by,contentType:existing[0].content_type,size:existing[0].size,createdAt:existing[0].created_at?.toISOString?.() ?? existing[0].created_at}};}
+314:    const {rows}=await client.query(`INSERT INTO uploads(id,storage_key,uploaded_by,content_type,size,created_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,[crypto.randomUUID(),key,userId,contentType,size,createdAt]);
+319:  await requirePool().query(`INSERT INTO audit_logs(id,action,actor_id,entity_type,entity_id,meta,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)`,[audit.id,audit.action,audit.actorId,audit.entityType,audit.entityId,audit.meta||{},audit.createdAt]);
+322:  const {rows}=await requirePool().query(`INSERT INTO evidence(id,job_id,submitted_by,uri,notes,type,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[evidence.id,evidence.jobId,evidence.submittedBy,evidence.uri,evidence.notes,evidence.type,evidence.createdAt]);
+327:    const { rows: jr } = await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`, [evidence.jobId]);
+334:      const { rows: ur } = await client.query(`SELECT id FROM uploads WHERE storage_key=$1 AND uploaded_by=$2`, [evidence.storageKey, evidence.submittedBy]);
+337:    const { rows } = await client.query(`INSERT INTO evidence(id,job_id,submitted_by,uri,notes,type,created_at) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [evidence.id,evidence.jobId,evidence.submittedBy,evidence.uri,evidence.notes,evidence.type,evidence.createdAt]);
+338:    await client.query(`UPDATE jobs SET updated_at=$2 WHERE id=$1`, [evidence.jobId,evidence.createdAt]);
+344:  const {rows}=await requirePool().query(`SELECT * FROM offers WHERE job_id=$1 ORDER BY created_at ASC`,[jobId]); return rows.map(offerFromRow);
+347:  const {rows}=await requirePool().query(`SELECT * FROM offers WHERE job_id=$1 AND provider_id=$2 AND status='PENDING' LIMIT 1`,[jobId,providerId]); return rows[0]?offerFromRow(rows[0]):null;
+350:  const {rows}=await client.query(`SELECT * FROM payments WHERE id=$1`,[paymentId]); return rows[0]?paymentFromRow(rows[0]):null;
+354:    const {rows}=await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`,[id]); if(!rows[0]) return null; const job=jobFromRow(rows[0]);
+359:    const {rows:updated}=await client.query(`UPDATE jobs SET ${sets.join(',')} WHERE id=$1 RETURNING *`,values); return jobFromRow(updated[0]);
+364:    const {rows}=await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`,[id]); if(!rows[0]) return null; const job=jobFromRow(rows[0]);
+366:    const {rows:p}=await client.query(`SELECT * FROM payments WHERE job_id=$1 FOR UPDATE`,[id]); const payment=p[0]?paymentFromRow(p[0]):null;
+369:    const {rows:uj}=await client.query(`UPDATE jobs SET ${sets.join(',')} WHERE id=$1 RETURNING *`,vals);
+370:    const {rows:up}=await client.query(`UPDATE payments SET status=$2,updated_at=NOW() WHERE id=$1 RETURNING *`,[payment.id,paymentStatus==='HELD'?'RELEASE_PENDING':paymentStatus]);
+388:    const { rows: jobRows } = await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`, [offer.jobId]);
+395:    const { rows: offerRows } = await client.query(`SELECT * FROM offers WHERE id=$1 FOR UPDATE`, [offer.id]);
+403:    const { rows: acceptedRows } = await client.query(`UPDATE offers SET status='ACCEPTED',updated_at=NOW() WHERE id=$1 RETURNING *`, [offer.id]);
+404:    await client.query(`UPDATE offers SET status='REJECTED',updated_at=NOW() WHERE job_id=$1 AND id<>$2 AND status='PENDING'`, [job.id,offer.id]);
+405:    const {rows}=await client.query(`UPDATE jobs SET provider_id=$2,status='ASSIGNED',updated_at=NOW() WHERE id=$1 RETURNING *`, [job.id,offer.providerId]);
+410:  const { rows } = await client.query(`SELECT * FROM payments WHERE job_id=$1`, [jobId]);
+414:  const { rows } = await client.query(`SELECT * FROM payments WHERE payer_id=$1 AND idempotency_key=$2`, [payerId,key]);
+419:    const {rows:jobRows}=await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`, [jobId]);
+424:    const existingRow = await client.query(`SELECT * FROM payments WHERE job_id=$1 FOR UPDATE`, [jobId]);
+429:        await client.query(`UPDATE payments SET status='HOLD_PENDING',idempotency_key=COALESCE(NULLIF(idempotency_key,''),NULLIF($3,'')),updated_at=$2 WHERE id=$1`, [existing.id,createdAt,idempotencyKey || null]);
+431:          INSERT INTO outbox_events(id,event_type,aggregate_type,aggregate_id,dedupe_key,payload,status,attempts,available_at,created_at)
+448:      const {rows:offerRows}=await client.query(`SELECT * FROM offers WHERE id=$1 AND job_id=$2 FOR UPDATE`, [offerId,jobId]);
+451:      await client.query(`UPDATE offers SET status='ACCEPTED',updated_at=NOW() WHERE id=$1`, [offerId]);
+452:      await client.query(`UPDATE offers SET status='REJECTED',updated_at=NOW() WHERE job_id=$1 AND id<>$2 AND status='PENDING'`, [jobId,offerId]);
+456:    const {rows}=await client.query(`INSERT INTO payments(id,job_id,payer_id,payee_id,amount,status,provider_ref,idempotency_key,base_amount,employer_fee,worker_fee,platform_fee,employer_charge,provider_payout,fee_policy_version,currency,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'HOLD_PENDING',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *`, [id,jobId,payerId,payeeId,amount,placeholderRef,idempotencyKey || null,fees.baseAmount,fees.employerFee,fees.workerFee,fees.platformFee,fees.employerCharge,fees.providerPayout,fees.policyVersion,fees.currency,createdAt]);
+457:    const {rows:job2}=await client.query(`UPDATE jobs SET status='FUNDED',updated_at=$2,provider_id=COALESCE(provider_id,$3) WHERE id=$1 RETURNING *`, [jobId,createdAt,payeeId]);
+461:      INSERT INTO outbox_events(id,event_type,aggregate_type,aggregate_id,dedupe_key,payload,status,attempts,available_at,created_at)
+465:    await client.query(`INSERT INTO audit_logs(id,action,actor_id,entity_type,entity_id,meta,created_at) VALUES($1,'PAYMENT_FUND',$2,'payment',$3,$4::jsonb,$5)`, [crypto.randomUUID(), payerId, id, JSON.stringify({jobId,outboxEventId:ev[0].id}), createdAt]);
+472:    const { rows: er } = await client.query(`SELECT * FROM outbox_events WHERE id=$1 FOR UPDATE`, [eventId]);
+474:    const { rows: pr } = await client.query(`SELECT * FROM payments WHERE id=$1 AND job_id=$2 FOR UPDATE`, [paymentId, jobId]);
+481:      await client.query(`UPDATE outbox_events SET status='DONE',processed_at=COALESCE(processed_at,NOW()),locked_at=NULL,last_error=NULL WHERE id=$1`, [eventId]);
+485:    await client.query(`UPDATE payments SET status='HELD',provider_ref=$2,updated_at=NOW() WHERE id=$1`, [paymentId, providerRef]);
+486:    await client.query(`INSERT INTO audit_logs(id,action,actor_id,entity_type,entity_id,meta,created_at) VALUES($1,'PAYMENT_HOLD_CONFIRMED',$2,'payment',$3,$4::jsonb,NOW())`, [crypto.randomUUID(), actorId, paymentId, JSON.stringify({ jobId, outboxEventId:eventId, providerRef })]);
+487:    await client.query(`UPDATE outbox_events SET status='DONE',processed_at=NOW(),locked_at=NULL,last_error=NULL WHERE id=$1`, [eventId]);
+494:    const { rows: jr } = await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`, [jobId]);
+499:    const { rows: pr } = await client.query(`SELECT * FROM payments WHERE id=$1 AND job_id=$2 FOR UPDATE`, [paymentId, jobId]);
+503:      `INSERT INTO outbox_events(id,event_type,aggregate_type,aggregate_id,dedupe_key,payload,status,attempts,available_at,created_at)
+520:  const { rows } = await requirePool().query(`SELECT * FROM outbox_events WHERE id=$1`, [id]);
+528:         SELECT id FROM outbox_events
+536:       UPDATE outbox_events o
+547:    const { rows: er } = await client.query(`SELECT * FROM outbox_events WHERE id=$1 FOR UPDATE`, [eventId]);
+549:    const { rows: pr } = await client.query(`SELECT * FROM payments WHERE id=$1 AND job_id=$2 FOR UPDATE`, [paymentId, jobId]);
+553:      await client.query(`UPDATE outbox_events SET status='DONE',processed_at=COALESCE(processed_at,NOW()),locked_at=NULL,last_error=NULL WHERE id=$1`, [eventId]);
+558:    await client.query(`UPDATE payments SET status='RELEASED',updated_at=NOW() WHERE id=$1`, [paymentId]);
+559:    await client.query(`UPDATE jobs SET status='SETTLED',updated_at=NOW() WHERE id=$1`, [jobId]);
+565:    await client.query(`INSERT INTO audit_logs(id,action,actor_id,entity_type,entity_id,meta,created_at) VALUES($1,'PAYMENT_RELEASE',$2,'payment',$3,$4::jsonb,NOW())`, [crypto.randomUUID(), actorId, paymentId, JSON.stringify({ jobId, outboxEventId:eventId, providerPayout:breakdown.providerPayout, platformFee:breakdown.platformFee })]);
+566:    await client.query(`UPDATE outbox_events SET status='DONE',processed_at=NOW(),locked_at=NULL,last_error=NULL WHERE id=$1`, [eventId]);
+581:    const { rows } = await client.query(`SELECT attempts FROM outbox_events WHERE id=$1 FOR UPDATE`, [eventId]);
+588:      `UPDATE outbox_events SET status=$2,available_at=NOW()+make_interval(secs => $3),locked_at=NULL,last_error=$4 WHERE id=$1`,
+592:      await client.query(`UPDATE payments p SET status='HOLD_FAILED',updated_at=NOW() FROM outbox_events o WHERE o.id=$1 AND o.event_type='PAYMENT_CREATE_HOLD' AND p.id=o.aggregate_id AND p.status='HOLD_PENDING'`, [eventId]);
+593:      await client.query(`UPDATE refunds r SET status='FAILED',updated_at=NOW() FROM outbox_events o WHERE o.id=$1 AND o.event_type='PAYMENT_REFUND' AND r.id=(o.payload->>'refundId')::uuid AND r.status='PENDING'`, [eventId]);
+594:      await client.query(`UPDATE payments p SET status='HELD',updated_at=NOW() FROM outbox_events o WHERE o.id=$1 AND o.event_type='PAYMENT_REFUND' AND p.id=o.aggregate_id AND p.status='REFUND_PENDING'`, [eventId]);
+685:    const {rows:jr}=await client.query(`SELECT * FROM jobs WHERE id=$1 FOR UPDATE`,[jobId]);
+688:    const {rows:pr}=await client.query(`SELECT * FROM payments WHERE id=$1 AND job_id=$2 FOR UPDATE`,[paymentId,jobId]);
+694:    await client.query(`UPDATE payments SET status='REFUND_PENDING',updated_at=$2 WHERE id=$1`,[paymentId,createdAt]);
+696:    const {rows:ev}=await client.query(`INSERT INTO outbox_events(id,event_type,aggregate_type,aggregate_id,dedupe_key,payload,status,attempts,available_at,created_at) VALUES(gen_random_uuid(),'PAYMENT_REFUND','payment',$1,$2,$3::jsonb,'PENDING',0,NOW(),NOW()) ON CONFLICT(dedupe_key) DO UPDATE SET status=CASE WHEN outbox_events.status='DONE' THEN outbox_events.status ELSE 'PENDING' END,available_at=CASE WHEN outbox_events.status='DONE' THEN outbox_events.available_at ELSE NOW() END RETURNING *`,[paymentId,dedupe,JSON.stringify({jobId,ownerId,paymentId,refundId:id,providerRef:payment.provider_ref,idempotencyKey:idempotencyKey||`refund:${id}`})]);
+703:    const {rows:pr}=await client.query(`SELECT p.*,j.provider_id,j.status AS job_status FROM payments p JOIN jobs j ON j.id=p.job_id WHERE p.id=$1 AND p.job_id=$2 FOR UPDATE`,[paymentId,jobId]);
+706:    if(payment.status==='REFUNDED' && refund.status==='REFUNDED'){await client.query(`UPDATE outbox_events SET status='DONE',processed_at=COALESCE(processed_at,NOW()),locked_at=NULL,last_error=NULL WHERE id=$1`,[eventId]);return {completed:true,alreadyDone:true};}
+710:    await client.query(`UPDATE payments SET status='REFUNDED',provider_ref=$2,updated_at=NOW() WHERE id=$1`,[paymentId,payment.provider_ref]);
+711:    await client.query(`UPDATE jobs SET status=CASE WHEN provider_id IS NULL THEN 'PUBLISHED' ELSE 'ASSIGNED' END,updated_at=NOW() WHERE id=$1`,[jobId]);
+713:    await client.query(`INSERT INTO audit_logs(id,action,actor_id,entity_type,entity_id,meta,created_at) VALUES($1,'PAYMENT_REFUND',$2,'payment',$3,$4::jsonb,NOW())`,[crypto.randomUUID(),actorId,paymentId,JSON.stringify({jobId,refundId,eventId,providerRef})]);
+714:    await client.query(`UPDATE outbox_events SET status='DONE',processed_at=NOW(),locked_at=NULL,last_error=NULL WHERE id=$1`,[eventId]);
+732:    const {rows:pr}=await client.query(`SELECT * FROM payments WHERE id=$1 FOR UPDATE`,[paymentId]);
+735:    if(eventType==='PAYMENT_HELD' && p.status==='HOLD_PENDING') await client.query(`UPDATE payments SET status='HELD',provider_ref=$2,updated_at=NOW() WHERE id=$1`,[paymentId,providerRef]);
+736:    else if(eventType==='PAYMENT_RELEASED' && p.status==='RELEASE_PENDING') { await client.query(`UPDATE payments SET status='RELEASED',updated_at=NOW() WHERE id=$1`,[paymentId]); await client.query(`UPDATE jobs SET status='SETTLED',updated_at=NOW() WHERE id=$1`,[p.job_id]); const b={baseAmount:Number(p.base_amount||p.amount),employerFee:Number(p.employer_fee||0),workerFee:Number(p.worker_fee||0),platformFee:Number(p.platform_fee||0),employerCharge:Number(p.employer_charge||p.amount),providerPayout:Number(p.provider_payout||p.amount),currency:p.currency||'USD'}; for(const journal of [releaseJournal(b),payoutJournal(b)]){const jid=crypto.randomUUID();for(const e of journal)await client.query(`INSERT INTO ledger_entries(id,journal_id,reference_type,reference_id,account,debit,credit,currency,created_at) VALUES($1,$2,'PAYMENT_WEBHOOK',$3,$4,$5,$6,$7,NOW())`,[crypto.randomUUID(),jid,paymentId,e.account,e.debit,e.credit,b.currency]);} await client.query(`INSERT INTO settlements(id,payment_id,provider_ref,amount,currency,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,'RELEASED',NOW(),NOW()) ON CONFLICT(payment_id) DO UPDATE SET status='RELEASED',provider_ref=EXCLUDED.provider_ref,updated_at=NOW()`,[crypto.randomUUID(),paymentId,providerRef, b.providerPayout,b.currency]); }
+743:        await client.query(`UPDATE payments SET status='REFUNDED',updated_at=NOW() WHERE id=$1`,[paymentId]);
+744:        await client.query(`UPDATE jobs SET status=CASE WHEN provider_id IS NULL THEN 'PUBLISHED' ELSE 'ASSIGNED' END,updated_at=NOW() WHERE id=$1`,[p.job_id]);
+754:  const { rows } = await requirePool().query(`SELECT COUNT(*)::int AS payments, COUNT(*) FILTER (WHERE status IN ('HOLD_PENDING','REFUND_PENDING','RELEASE_PENDING'))::int AS pending, COUNT(*) FILTER (WHERE status='HELD')::int AS held, COUNT(*) FILTER (WHERE status='RELEASED')::int AS released, COUNT(*) FILTER (WHERE status='REFUNDED')::int AS refunded, COALESCE(SUM(platform_fee),0) AS platform_fees, COALESCE(SUM(employer_charge),0) AS employer_charges, COALESCE(SUM(provider_payout),0) AS provider_payouts FROM payments`);
+763:  const { rows } = await pool.query(`INSERT INTO analytics_events(id,event_name,user_id,anonymous_id,session_id,app_version,platform,properties,dedupe_key,occurred_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11) ON CONFLICT(dedupe_key) DO UPDATE SET dedupe_key=EXCLUDED.dedupe_key RETURNING *`, [event.id,event.eventName,event.userId,event.anonymousId,event.sessionId,event.appVersion,event.platform,JSON.stringify(properties),dedupeKey||null,event.occurredAt,event.createdAt]);
+767:export async function insertCrashReport(c) { const {rows}=await requirePool().query(`INSERT INTO crash_reports(id,user_id,anonymous_id,app_version,platform,release_channel,fingerprint,message,stack,context,occurred_at,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12) RETURNING *`,[c.id,c.userId,c.anonymousId,c.appVersion,c.platform,c.releaseChannel,c.fingerprint,c.message,c.stack,JSON.stringify(c.context||{}),c.occurredAt,c.createdAt]); return crashFromRow(rows[0]); }
+803:  const {rows}=await requirePool().query(`SELECT event_name,COUNT(*)::int AS count,COUNT(DISTINCT user_id)::int AS users,
+804:    (SELECT COUNT(DISTINCT user_id)::int FROM analytics_events WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')) AS unique_users
+810:export async function getCrashSummary(days=30) { const d=Math.min(Math.max(Number(days)||30,1),365); const {rows}=await requirePool().query(`SELECT fingerprint,COUNT(*)::int AS count,MAX(occurred_at) AS last_seen FROM crash_reports WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day') GROUP BY fingerprint ORDER BY count DESC LIMIT 100`,[d]); const {rows:tot}=await requirePool().query(`SELECT COUNT(*)::int AS total,COUNT(DISTINCT fingerprint)::int AS fingerprints FROM crash_reports WHERE occurred_at >= NOW() - ($1::int * INTERVAL '1 day')`,[d]); return {days:d,total:Number(tot[0]?.total||0),fingerprints:Number(tot[0]?.fingerprints||0),top:rows.map(r=>({fingerprint:r.fingerprint,count:Number(r.count),lastSeen:r.last_seen?.toISOString?.()??r.last_seen}))}; }
+813:  const {rows}=await requirePool().query(`INSERT INTO trust_reports(id,reporter_id,entity_type,entity_id,reason,details,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[report.id,report.reporterId,report.entityType,report.entityId,report.reason,report.details||'',report.status||'OPEN',report.createdAt,report.updatedAt]);
+818:  const {rows}=await requirePool().query(`SELECT r.*,u.display_name AS reporter_name FROM trust_reports r LEFT JOIN users u ON u.id=r.reporter_id ${where} ORDER BY r.created_at DESC LIMIT 500`,params);
+822:  const {rows}=await requirePool().query(`UPDATE trust_reports SET status=$2,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,status]);
+827:  const {rows}=await requirePool().query(`SELECT a.id,a.resume_text,a.skills,a.status,u.display_name,u.id AS user_id FROM job_applications a JOIN users u ON u.id=a.candidate_id WHERE a.job_id=$1 AND a.id = ANY($2::uuid[]) AND a.status IN ('FORWARDED','INTERVIEW','OFFERED','ACCEPTED')`,[jobId,ids]);
+834:    pool.query(`SELECT ${userSelect} FROM users WHERE id=$1`, [userId]),
+835:    pool.query(`SELECT id,user_id,provider_type,capacity,verification_status,created_at,updated_at FROM providers WHERE user_id=$1`, [userId]),
+836:    pool.query(`SELECT * FROM jobs WHERE owner_id=$1 OR provider_id=$1 ORDER BY created_at DESC`, [userId]),
+837:    pool.query(`SELECT * FROM job_applications WHERE candidate_id=$1 ORDER BY created_at DESC`, [userId]),
+838:    pool.query(`SELECT o.* FROM offers o JOIN jobs j ON j.id=o.job_id WHERE o.provider_id=$1 OR j.owner_id=$1 ORDER BY o.created_at DESC`, [userId]),
+839:    pool.query(`SELECT * FROM payments WHERE payer_id=$1 OR payee_id=$1 ORDER BY created_at DESC`, [userId]),
+840:    pool.query(`SELECT id,type,title,body,created_at,read_at FROM notifications WHERE user_id=$1 ORDER BY created_at DESC`, [userId]),
+841:    pool.query(`SELECT * FROM notification_preferences WHERE user_id=$1`, [userId]),
+842:    pool.query(`SELECT * FROM evidence WHERE submitted_by=$1 ORDER BY created_at DESC`, [userId]),
+843:    pool.query(`SELECT * FROM uploads WHERE uploaded_by=$1 ORDER BY created_at DESC`, [userId]),
+854:    const u = await client.query(`SELECT id,role FROM users WHERE id=$1 FOR UPDATE`, [userId]);
+858:    await client.query(`UPDATE analytics_events SET user_id=NULL WHERE user_id=$1`, [userId]);
+859:    await client.query(`UPDATE crash_reports SET user_id=NULL WHERE user_id=$1`, [userId]);
+861:    await client.query(`UPDATE evidence SET submitted_by=NULL WHERE submitted_by=$1`, [userId]);
+862:    await client.query(`UPDATE uploads SET uploaded_by=NULL WHERE uploaded_by=$1`, [userId]);
+863:    await client.query(`UPDATE jobs SET provider_id=NULL WHERE provider_id=$1 AND status IN ('DRAFT','PUBLISHED')`, [userId]);
+864:    await client.query(`UPDATE users SET email=$2,password_hash=$3,display_name='Deleted user',status='DELETED',session_version=session_version+1 WHERE id=$1`, [userId,replacement.email,replacement.passwordHash]);
+865:    await client.query(`UPDATE audit_logs SET actor_id=NULL WHERE actor_id=$1`, [userId]);
+866:    await client.query(`DELETE FROM trust_reports WHERE reporter_id=$1`, [userId]);
+
+--- Vertical registry repository notes ---
+listVerticals():
+  SELECT id,slug,name,name_en,description,config,is_active,sort_order FROM verticals WHERE is_active=TRUE ORDER BY sort_order,slug
+listCategories(verticalSlug = null):
+  SELECT id,slug,name,name_en,description,parent_id,sort_order,is_active,created_at AS "createdAt" FROM categories WHERE is_active=TRUE ORDER BY sort_order,name
+  -- when verticalSlug is provided, the WHERE clause gains:
+  --   AND vertical_id=(SELECT id FROM verticals WHERE slug=$1)

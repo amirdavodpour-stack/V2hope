@@ -1,0 +1,11 @@
+HOPE DR restore drill
+Started UTC: 2026-09-13T14:26:35Z
+Completed UTC: 2026-09-13T14:26:35Z
+Backup seconds: 0
+Restore seconds: 0
+Total RTO seconds: 0
+RTO target seconds: 900
+Public tables: 29
+Users rows: 2
+Categories rows: 23
+Result: PASS

@@ -1,0 +1,11 @@
+.git
+.github
+node_modules
+build
+.dart_tool
+.idea
+.vscode
+storage
+backups
+*.log
+*.zip

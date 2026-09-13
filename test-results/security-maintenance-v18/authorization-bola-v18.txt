@@ -1,0 +1,20 @@
+V18 Authorization/BOLA hardening verification — 2026-09-13
+
+Command: node --test backend/tests/authorization-bola-v18.test.mjs
+Result: 2/2 PASS, 0 fail, 0 skipped.
+
+Focused regression coverage:
+- cross-job application lifecycle endpoint rejects mismatched application/job identifiers with APPLICATION_JOB_MISMATCH
+- rejected request leaves the original application state unchanged
+- PostgreSQL repository transition contract accepts expectedJobId and checks the bound job id
+
+Additional verification:
+- backend/tests/e2e-security.test.mjs: 5/5 PASS
+- backend/tests/storage-upload-security-expanded.test.mjs: 5/5 PASS
+- backend/tests/notification-isolation-expanded.test.mjs: 7/7 PASS
+- backend/tests/application-concurrency-contract.test.mjs: 2/2 PASS
+- backend/tests/payment-webhook-trust-boundary-v2.test.mjs: 3/3 PASS
+- backend/tests/payment-reconciliation.test.mjs: 3/3 PASS
+- contract/architecture group: 16/16 PASS
+- npm run test:contract: 74/74 PASS
+- tools/validate-test-state.mjs: PASS

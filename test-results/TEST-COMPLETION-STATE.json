@@ -1,0 +1,107 @@
+{
+  "project": "HOPE-V7",
+  "session_id": "pre-cert-local-20260913T064306Z",
+  "finished_at": "2026-09-13T06:43:06Z",
+  "passed": {
+    "status_integrity": "PASS",
+    "backend_check": "PASS",
+    "backend_fast": "217/217 PASS",
+    "backend_contract": "71/71 PASS",
+    "backend_umbrella": "522 pass / 0 fail / 4 skipped of 526",
+    "coverage_gate": "PASS line 81.21% branch 70.87% funcs 74.02%",
+    "postgres_isolated": "3x 4/4 PASS, 0 leftover test DBs",
+    "dr_restore_drill": "PASS",
+    "security_audit": "PASS 0 vulnerabilities (revalidated against registry.npmjs.org this session, rc=0; prior session evidence retained)",
+    "production_env": "PASS",
+    "sbom": "PASS",
+    "release_manifest": "PASS",
+    "agent_handoff": "6/6 PASS",
+    "flutter_analyze": "0 issues",
+    "flutter_tests": "414/414 PASS",
+    "backend_full": "524/529 PASS; 5 suite-defined skips; 0 fail",
+    "production_persistence_boundary": "2/2 PASS",
+    "executable_permissions": "27/27 PASS",
+    "npm_audit": "PASS 0 high+ vulnerabilities (registry revalidation completed this session)",
+    "flutter_coverage": "PASS line 78.26% (gate 65%)",
+    "maintainability_static": "PASS (CHANGELOG.md present)",
+    "security_threat_model_static": "PASS (SECURITY-THREAT-MODEL.md present)",
+    "certification_runbook": "PRESENT"
+  },
+  "failed": {
+    "perf_gate": "successRate below 0.995 -> EXPECTED RATE-LIMIT POLICY LIMIT",
+    "score_90plus": "overallReadiness 91, allAtLeast90=false (gate conditions mapped in test-results/CERTIFICATION-GAP-MAP.md)"
+  },
+  "blocked": [
+    "Android SDK/adb/emulator absent (runner 1989 MiB < 6144 MiB guard floor)",
+    "Docker absent",
+    "S3/R2 credentials absent",
+    "STAGING_BASE_URL absent",
+    "certified runner >=6144 MiB unavailable (ci-resource-guard rc=2 this session)",
+    "local PostgreSQL absent (runtime evidence gates require CI host)"
+  ],
+  "not_run": [
+    "Android instrumentation",
+    "containerized integration",
+    "S3 integration",
+    "staging runtime gates"
+  ],
+  "build_performed": false,
+  "deployment_performed": false,
+  "source_files_modified": true,
+  "application_source_modified": true,
+  "test_and_documentation_files_modified": true,
+  "release_certified": false,
+  "final_build_performed": false,
+  "coverage": {
+    "backend": {
+      "line": 81.21,
+      "branch": 70.87,
+      "functions": 74.02
+    },
+    "flutter": {
+      "line": 78.26,
+      "gate": 65,
+      "status": "PASS (78.26 >= 65)"
+    }
+  },
+  "performance": {
+    "conc1": {
+      "requests": 200,
+      "ok": 67,
+      "err4": 133,
+      "err5": 0,
+      "sr": 0.335,
+      "p95": 1.84,
+      "p99": 7.54
+    },
+    "conc2": {
+      "requests": 200,
+      "ok": 67,
+      "err4": 133,
+      "err5": 0,
+      "sr": 0.335,
+      "p95": 3.1,
+      "p99": 4.43
+    },
+    "conc10": {
+      "requests": 200,
+      "ok": 187,
+      "err4": 13,
+      "err5": 0,
+      "sr": 0.935,
+      "p95": 12.62,
+      "p99": 23.86
+    }
+  },
+  "postgres_isolated": {
+    "runs": 3,
+    "result": "4/4 PASS each",
+    "leftover": "0"
+  },
+  "evidence_session": "20260913T063720Z",
+  "maintenance_source_fix": "backend/src/routes/admin_routes.js: PostgreSQL admin trust-report/audit paths now return repository results directly before any legacy findUser/db.collection access.",
+  "source_modified_in_latest_qualification_session": false,
+  "production_path_maintenance_change_present": true,
+  "gap_map": "test-results/CERTIFICATION-GAP-MAP.md",
+  "latest_local_maintenance": "Static certification-prep artifacts added; no application source changed in this maintenance pass."
+}

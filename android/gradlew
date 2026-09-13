@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_HOME="$(cd "$(dirname "$0")" && pwd -P)"
+WRAPPER_PROPS="$APP_HOME/gradle/wrapper/gradle-wrapper.properties"
+
+read_prop() {
+  local key="$1"
+  awk -F= -v k="$key" '$1 == k {sub(/^[^=]*=/, ""); print; exit}' "$WRAPPER_PROPS"
+}
+
+DIST_URL="$(read_prop distributionUrl)"
+DIST_URL="${DIST_URL//\\:/:}"
+DIST_FILE="$(basename "${DIST_URL%%\?*}")"
+DIST_NAME="${DIST_FILE%.zip}"
+
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+INSTALL_DIR="$GRADLE_USER_HOME/wrapper/dists/$DIST_NAME"
+GRADLE_BIN="$INSTALL_DIR/bin/gradle"
+ZIP_PATH="$GRADLE_USER_HOME/wrapper/dists/$DIST_FILE"
+LOCK_PATH="$GRADLE_USER_HOME/wrapper/dists/.${DIST_FILE}.lock"
+
+if [[ ! -x "$GRADLE_BIN" ]]; then
+  mkdir -p "$GRADLE_USER_HOME/wrapper/dists"
+  (
+    flock 9
+    if [[ ! -x "$GRADLE_BIN" ]]; then
+      TMP_ZIP="${ZIP_PATH}.tmp.$$"
+      trap 'rm -f -- "$TMP_ZIP"' EXIT
+      curl --fail --location --retry 3 --retry-delay 2 --connect-timeout 15 --max-time 900 \
+        --output "$TMP_ZIP" "$DIST_URL"
+      test -s "$TMP_ZIP"
+
+      if [[ -n "${GRADLE_DISTRIBUTION_SHA256:-}" ]]; then
+        printf '%s  %s\n' "$GRADLE_DISTRIBUTION_SHA256" "$TMP_ZIP" | sha256sum --check --strict -
+      else
+        EXPECTED="$(curl --fail --location --retry 3 --connect-timeout 15 --max-time 60 \
+          "${DIST_URL}.sha256" | awk '{print $1}')"
+        [[ "$EXPECTED" =~ ^[0-9a-fA-F]{64}$ ]] || { echo 'ERROR: invalid Gradle distribution SHA-256.' >&2; exit 1; }
+        printf '%s  %s\n' "$EXPECTED" "$TMP_ZIP" | sha256sum --check --strict -
+      fi
+
+      TMP_INSTALL="${INSTALL_DIR}.tmp.$$"
+      rm -rf -- "$TMP_INSTALL" "$INSTALL_DIR"
+      mkdir -p "$TMP_INSTALL"
+      unzip -q "$TMP_ZIP" -d "$TMP_INSTALL"
+      # Gradle distribution zips contain a top-level '<name>' folder. Verify
+      # the expected binary inside that folder, then atomically publish the
+      # complete distribution at the path used by GRADLE_BIN.
+      INNER_DIR="${DIST_NAME%-bin}"
+      INNER_ROOT="$TMP_INSTALL/$INNER_DIR"
+      test -d "$INNER_ROOT" || { echo "ERROR: Gradle distribution root not found: $INNER_DIR" >&2; exit 1; }
+      test -x "$INNER_ROOT/bin/gradle" || { echo 'ERROR: Gradle binary missing from distribution.' >&2; exit 1; }
+      mv "$INNER_ROOT" "$INSTALL_DIR"
+      rm -rf -- "$TMP_INSTALL"
+      test -x "$GRADLE_BIN"
+      rm -f -- "$TMP_ZIP"
+      trap - EXIT
+    fi
+  ) 9>"$LOCK_PATH"
+fi
+
+exec "$GRADLE_BIN" "$@"

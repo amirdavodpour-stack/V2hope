@@ -1,0 +1,54 @@
+suite,result,session
+status-integrity,PASS,prebuild-qual-20260913T021809Z
+backend-check,PASS,prebuild-qual-20260913T021809Z
+backend-fast-217,PASS,prebuild-qual-20260913T021809Z
+backend-contract,PASS,prebuild-qual-20260913T021809Z
+backend-umbrella,522 pass / 0 fail / 4 skipped of 526,prebuild-qual-20260913T021809Z
+coverage-gate 81.22/70.65/74.02,PASS,prebuild-qual-20260913T021809Z
+flutter-analyze,PASS,prebuild-qual-20260913T021809Z
+flutter-tests,All tests passed (388),prebuild-qual-20260913T021809Z
+postgres-isolated-3x,PASS 4/4 x3,prebuild-qual-20260913T021809Z
+dr-restore-drill,PASS,prebuild-qual-20260913T021809Z
+security-audit,PASS 0 vulns,prebuild-qual-20260913T021809Z
+payment-e2e,PASS,prebuild-qual-20260913T021809Z
+notifications,PASS,prebuild-qual-20260913T021809Z
+backup,PASS,prebuild-qual-20260913T021809Z
+perf-diag,EXPECTED_POLICY_LIMIT,prebuild-qual-20260913T021809Z
+android,BLOCKED,prebuild-qual-20260913T021809Z
+docker,BLOCKED,prebuild-qual-20260913T021809Z
+s3,BLOCKED,prebuild-qual-20260913T021809Z
+staging,BLOCKED,prebuild-qual-20260913T021809Z
+score-90plus,FAIL threshold-only,prebuild-qual-20260913T021809Z
+status-integrity,PASS,20260913T032022Z
+backend-check,PASS,20260913T032022Z
+backend-fast,217/217 PASS,20260913T032022Z
+backend-contract,71/71 PASS,20260913T032022Z
+production-persistence-boundary,2/2 PASS,20260913T032022Z
+executable-permissions,27/27 PASS,20260913T032022Z
+backend-full,524 pass / 0 fail / 5 skipped of 529,20260913T032022Z
+coverage-gate,81.21/70.87/74.02 PASS,20260913T032022Z
+flutter-tests,388/388 PASS (latest prior session),20260913T032022Z
+flutter-coverage,57.45% < 65%,20260913T032022Z
+postgres-isolated,4/4 x3 PASS (latest prior session),20260913T032022Z
+npm-audit,NOT REVALIDATED - registry DNS EAI_AGAIN,20260913T032022Z
+perf-diag,EXPECTED_POLICY_LIMIT (latest prior session),20260913T032022Z
+android,BLOCKED,20260913T032022Z
+docker,BLOCKED,20260913T032022Z
+s3,BLOCKED,20260913T032022Z
+staging,BLOCKED,20260913T032022Z
+flutter-targeted-new,26/26 PASS,20260913T040220Z
+flutter-analyze,0 issues PASS,20260913T040220Z
+flutter-tests,414/414 PASS,20260913T040220Z
+flutter-coverage,78.26% >= 65% PASS,20260913T040220Z
+status-integrity,PASS,20260913T040220Z
+npm-audit,PASS 0 vulnerabilities rc=0 (registry revalidation),20260913T063720Z
+score-90plus,allAtLeast90=false overallReadiness=91 minScore=69 (read-only run),20260913T063720Z
+certified-runner-guard,FAIL rc=2 RAM 1989 MiB < 6144 MiB,20260913T063720Z
+android,BLOCKED (class E - no SDK; RAM floor),20260913T063720Z
+docker,BLOCKED (class E/F - no container runtime),20260913T063720Z
+s3,BLOCKED (class C - no credentials),20260913T063720Z
+staging,BLOCKED (class C/D - STAGING_BASE_URL absent),20260913T063720Z
+certification-gap-map,CREATED (test-results/CERTIFICATION-GAP-MAP.md),20260913T063720Z
+current-baseline,CREATED (CURRENT_BASELINE.csv from repo state files),20260913T063720Z
+status-integrity,PASS,pre-cert-local-20260913T064306Z
+score-90plus,overallReadiness=92 allAtLeast90=false (read-only recomputation),pre-cert-local-20260913T064306Z

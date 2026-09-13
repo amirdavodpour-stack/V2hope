@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "startedAt": "2026-09-12T23:51:40.985Z",
+  "finishedAt": "2026-09-12T23:51:41.191Z",
+  "target": "http://127.0.0.1:3000",
+  "workload": {
+    "totalRequests": 200,
+    "concurrency": 10,
+    "endpoints": [
+      "/live",
+      "/health",
+      "/api/v1/jobs"
+    ]
+  },
+  "thresholds": {
+    "p95BudgetMs": 1000,
+    "p99BudgetMs": 2000,
+    "max5xxRate": 0.01,
+    "minSuccessRate": 0.995,
+    "requireAllOk": false
+  },
+  "results": {
+    "completed": 200,
+    "ok": 187,
+    "degraded": 0,
+    "errors4xx": 13,
+    "errors5xx": 0,
+    "errorRate5xx": 0,
+    "successRate": 0.935,
+    "elapsedMs": 203.88,
+    "requestsPerSecond": 980.97,
+    "latencyMs": {
+      "p50": 6.01,
+      "p95": 21.39,
+      "p99": 30.25,
+      "max": 59.81
+    }
+  },
+  "passed": false,
+  "errors": []
+}

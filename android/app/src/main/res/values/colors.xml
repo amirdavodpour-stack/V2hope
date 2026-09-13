@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- HOPE brand deep background, used by the native splash screen. -->
+    <color name="hopeSplashBackground">#0A0714</color>
+</resources>

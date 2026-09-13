@@ -1,0 +1,104 @@
+name: HOPE Build Test APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Lint workflow files (syntax + path + SHA pinning)
+        run: python3 tools/check-workflows.py
+
+  ci:
+    runs-on: ubuntu-latest
+    needs: workflow-lint
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+      - name: Verify API base URL secret
+        run: |
+          if [ -z "$API_BASE_URL" ]; then echo "API_BASE_URL secret is required" >&2; exit 1; fi
+          case "$API_BASE_URL" in
+            https://*) ;;
+            *) echo "API_BASE_URL must use HTTPS" >&2; exit 1 ;;
+          esac
+          printf '%s\n' "$API_BASE_URL" | grep -Eq '^https://[^[:space:]]+$' || {
+            echo "API_BASE_URL contains whitespace or is malformed" >&2
+            exit 1
+          }
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      - name: Backend install
+        run: npm ci
+        working-directory: backend
+      - name: Legacy/SQL test-mode guard (F3, warn-only)
+        run: node tools/guard-legacy-test-env.mjs check:all
+        working-directory: backend
+      - name: Backend quality gates
+        run: npm run check:all
+        working-directory: backend
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Verify pubspec lock freshness
+        run: bash tools/verify-pubspec-lock-fresh.sh
+      - name: Flutter static and test gate
+        id: flutter_gate
+        run: |
+          flutter analyze
+          flutter test --no-pub
+      - name: Backend test quality contract
+        run: NODE_ENV=test node --test tests/test-quality-contract.test.mjs
+        working-directory: backend
+      - name: Backend coverage gate
+        run: BACKEND_LINE_COVERAGE_MIN=70 BACKEND_BRANCH_COVERAGE_MIN=60 BACKEND_FUNCTION_COVERAGE_MIN=65 npm run test:coverage-gate
+        working-directory: backend
+      - name: Flutter coverage gate
+        run: FLUTTER_LINE_COVERAGE_MIN=65 bash tools/test_flutter_coverage.sh
+      - name: Upload Flutter coverage
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flutter-coverage
+          retention-days: 14
+          if-no-files-found: warn
+          path: coverage/lcov.info
+      - name: npm audit gate
+        id: npm_audit
+        run: |
+          set +e
+          npm audit --audit-level=high
+          status=$?
+          echo "result=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+        working-directory: backend
+      - name: Runtime gate - flutter toolchain
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.flutter_gate.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate flutter_toolchain --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Record npm audit evidence
+        if: ${{ always() }}
+        env:
+          result: ${{ steps.npm_audit.outputs.result }}
+        run: node tools/write-evidence.mjs --gate npm_audit --result "$result"
+        working-directory: backend

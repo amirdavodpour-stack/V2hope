@@ -1,0 +1,327 @@
+{
+  "generatedAt": "2026-09-13T18:27:38.241Z",
+  "engine": "evidence-derived-v2",
+  "threshold": 90,
+  "evidenceMaxAgeDays": 90,
+  "scores": {
+    "architecture": 100,
+    "backend_api": 100,
+    "database_integrity": 85,
+    "security": 85,
+    "authentication_authorization": 100,
+    "payments_financial_integrity": 85,
+    "storage": 85,
+    "notifications_outbox": 85,
+    "privacy": 100,
+    "observability": 100,
+    "mobile_flutter": 77,
+    "ux": 100,
+    "accessibility": 100,
+    "localization": 100,
+    "testing": 100,
+    "performance": 85,
+    "ci_cd": 100,
+    "disaster_recovery_resilience": 85,
+    "maintainability": 100,
+    "production_readiness": 69
+  },
+  "minScore": 69,
+  "allAtLeast90": false,
+  "overallReadiness": 92,
+  "details": {
+    "architecture": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 7,
+      "weightTotal": 7,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "backend_api": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "database_integrity": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 5,
+      "weightTotal": 5,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "postgres_runtime",
+          "requires": "PostgreSQL-backed suite executed",
+          "reason": "no artifact at docs/audit/evidence/postgres_runtime.json"
+        }
+      ]
+    },
+    "security": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 9,
+      "weightTotal": 9,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "npm_audit",
+          "requires": "npm audit --audit-level=high executed against the registry",
+          "reason": "no artifact at docs/audit/evidence/npm_audit.json"
+        }
+      ]
+    },
+    "authentication_authorization": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "payments_financial_integrity": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 4,
+      "weightTotal": 4,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "provider_runtime",
+          "requires": "real payment/notification provider delivery executed",
+          "reason": "no artifact at docs/audit/evidence/provider_runtime.json"
+        }
+      ]
+    },
+    "storage": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 4,
+      "weightTotal": 4,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "s3_runtime",
+          "requires": "real object-storage lifecycle executed",
+          "reason": "no artifact at docs/audit/evidence/s3_runtime.json"
+        }
+      ]
+    },
+    "notifications_outbox": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 5,
+      "weightTotal": 5,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "provider_runtime",
+          "requires": "real payment/notification provider delivery executed",
+          "reason": "no artifact at docs/audit/evidence/provider_runtime.json"
+        }
+      ]
+    },
+    "privacy": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "observability": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 5,
+      "weightTotal": 5,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "mobile_flutter": {
+      "score": 77,
+      "staticBase": 100,
+      "weightPassed": 10,
+      "weightTotal": 10,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "flutter_toolchain",
+          "requires": "flutter analyze/test executed on a real SDK",
+          "reason": "no artifact at docs/audit/evidence/flutter_toolchain.json"
+        },
+        {
+          "gate": "android_build",
+          "requires": "signed APK/AAB produced with checksum",
+          "reason": "no artifact at docs/audit/evidence/android_build.json"
+        },
+        {
+          "gate": "device_certification",
+          "requires": "install + critical flow run on device/emulator",
+          "reason": "no artifact at docs/audit/evidence/device_certification.json"
+        }
+      ]
+    },
+    "ux": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 5,
+      "weightTotal": 5,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "accessibility": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "localization": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "testing": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 7,
+      "weightTotal": 7,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "performance": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 4,
+      "weightTotal": 4,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "perf_run",
+          "requires": "performance run on target Node version",
+          "reason": "no artifact at docs/audit/evidence/perf_run.json"
+        }
+      ]
+    },
+    "ci_cd": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 7,
+      "weightTotal": 7,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "disaster_recovery_resilience": {
+      "score": 85,
+      "staticBase": 100,
+      "weightPassed": 6,
+      "weightTotal": 6,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "dr_restore",
+          "requires": "backup restore / chaos drill executed",
+          "reason": "no artifact at docs/audit/evidence/dr_restore.json"
+        }
+      ]
+    },
+    "maintainability": {
+      "score": 100,
+      "staticBase": 100,
+      "weightPassed": 4,
+      "weightTotal": 4,
+      "failedChecks": [],
+      "missingRuntimeGates": []
+    },
+    "production_readiness": {
+      "score": 69,
+      "staticBase": 100,
+      "weightPassed": 7,
+      "weightTotal": 7,
+      "failedChecks": [],
+      "missingRuntimeGates": [
+        {
+          "gate": "android_build",
+          "requires": "signed APK/AAB produced with checksum",
+          "reason": "no artifact at docs/audit/evidence/android_build.json"
+        },
+        {
+          "gate": "device_certification",
+          "requires": "install + critical flow run on device/emulator",
+          "reason": "no artifact at docs/audit/evidence/device_certification.json"
+        },
+        {
+          "gate": "postgres_runtime",
+          "requires": "PostgreSQL-backed suite executed",
+          "reason": "no artifact at docs/audit/evidence/postgres_runtime.json"
+        },
+        {
+          "gate": "dr_restore",
+          "requires": "backup restore / chaos drill executed",
+          "reason": "no artifact at docs/audit/evidence/dr_restore.json"
+        },
+        {
+          "gate": "npm_audit",
+          "requires": "npm audit --audit-level=high executed against the registry",
+          "reason": "no artifact at docs/audit/evidence/npm_audit.json"
+        }
+      ]
+    }
+  },
+  "evidence": {
+    "flutter_toolchain": "UNPROVEN: flutter analyze/test executed on a real SDK — no artifact at docs/audit/evidence/flutter_toolchain.json",
+    "android_build": "UNPROVEN: signed APK/AAB produced with checksum — no artifact at docs/audit/evidence/android_build.json",
+    "device_certification": "UNPROVEN: install + critical flow run on device/emulator — no artifact at docs/audit/evidence/device_certification.json",
+    "postgres_runtime": "UNPROVEN: PostgreSQL-backed suite executed — no artifact at docs/audit/evidence/postgres_runtime.json",
+    "s3_runtime": "UNPROVEN: real object-storage lifecycle executed — no artifact at docs/audit/evidence/s3_runtime.json",
+    "provider_runtime": "UNPROVEN: real payment/notification provider delivery executed — no artifact at docs/audit/evidence/provider_runtime.json",
+    "dr_restore": "UNPROVEN: backup restore / chaos drill executed — no artifact at docs/audit/evidence/dr_restore.json",
+    "perf_run": "UNPROVEN: performance run on target Node version — no artifact at docs/audit/evidence/perf_run.json",
+    "npm_audit": "UNPROVEN: npm audit --audit-level=high executed against the registry — no artifact at docs/audit/evidence/npm_audit.json"
+  },
+  "evidenceIssues": [],
+  "blockers": [
+    [
+      "database_integrity",
+      "capped by unproven runtime gates: postgres_runtime"
+    ],
+    [
+      "security",
+      "capped by unproven runtime gates: npm_audit"
+    ],
+    [
+      "payments_financial_integrity",
+      "capped by unproven runtime gates: provider_runtime"
+    ],
+    [
+      "storage",
+      "capped by unproven runtime gates: s3_runtime"
+    ],
+    [
+      "notifications_outbox",
+      "capped by unproven runtime gates: provider_runtime"
+    ],
+    [
+      "mobile_flutter",
+      "capped by unproven runtime gates: flutter_toolchain, android_build, device_certification"
+    ],
+    [
+      "performance",
+      "capped by unproven runtime gates: perf_run"
+    ],
+    [
+      "disaster_recovery_resilience",
+      "capped by unproven runtime gates: dr_restore"
+    ],
+    [
+      "production_readiness",
+      "capped by unproven runtime gates: android_build, device_certification, postgres_runtime, dr_restore, npm_audit"
+    ]
+  ]
+}

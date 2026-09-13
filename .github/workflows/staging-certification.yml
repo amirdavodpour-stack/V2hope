@@ -1,0 +1,246 @@
+name: Staging Certification
+
+on:
+  workflow_call:
+    outputs:
+      certification_status:
+        description: Whether every staging gate passed for the certified commit
+        value: ${{ jobs.staging-certification.outputs.certification_status }}
+      certification_sha:
+        description: SHA of the commit that passed staging certification
+        value: ${{ jobs.staging-certification.outputs.certification_sha }}
+      certification_attempt:
+        description: Attempt that produced the certification evidence
+        value: ${{ jobs.staging-certification.outputs.certification_attempt }}
+      certification_run_id:
+        description: Run id that produced the certification evidence
+        value: ${{ jobs.staging-certification.outputs.certification_run_id }}
+    secrets:
+      STAGING_BASE_URL:
+        description: HTTPS base URL of the real external staging deployment used for the product workflow and performance gates
+        required: true
+      NOTIFICATION_PUSH_URL:
+        required: false
+      NOTIFICATION_EMAIL_URL:
+        required: false
+      NOTIFICATION_PROVIDER_TOKEN:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  staging-certification:
+    runs-on: ubuntu-latest
+    outputs:
+      certification_status: ${{ steps.emit_status.outputs.status }}
+      certification_sha: ${{ github.sha }}
+      certification_attempt: ${{ github.run_attempt }}
+      certification_run_id: ${{ github.run_id }}
+    env:
+      STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      NOTIFICATION_PUSH_URL: ${{ secrets.NOTIFICATION_PUSH_URL }}
+      NOTIFICATION_EMAIL_URL: ${{ secrets.NOTIFICATION_EMAIL_URL }}
+      NOTIFICATION_PROVIDER_TOKEN: ${{ secrets.NOTIFICATION_PROVIDER_TOKEN }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s
+          --health-retries 10
+      minio:
+        image: minio/minio
+        ports:
+          - 9000:9000
+        command: server /data
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Resource capacity guard
+        run: bash tools/ci-resource-guard.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+      - name: Provision Android CI toolchain
+        run: bash tools/ci-android-toolchain.sh
+      - name: Runtime certification preflight
+        run: bash ../tools/runtime-certification-preflight.sh
+        working-directory: backend
+      - name: Backend install
+        run: npm ci
+        working-directory: backend
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Verify pubspec lock freshness
+        run: bash tools/verify-pubspec-lock-fresh.sh
+      - name: Flutter unit tests
+        run: flutter test --no-pub
+      - name: Postgres runtime probe
+        id: postgres_probe
+        run: npm run test:postgres
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          REQUIRE_INTEGRATION: '1'
+      - name: S3 runtime probe
+        id: s3_probe
+        run: S3_INTEGRATION=1 npm run test:s3
+        working-directory: backend
+        env:
+          # This probe talks to the ephemeral, same-runner MinIO service
+          # started above, which has no TLS listener -- it is not a stand-in
+          # for a real HTTPS-fronted staging bucket. S3_REQUIRE_HTTPS must
+          # stay consistent with S3_ENDPOINT's scheme, or the presigned-URL
+          # assertion in tests/s3-integration.test.mjs is unsatisfiable.
+          # Production S3 endpoints are separately required to be HTTPS by
+          # backend/src/config.js when NODE_ENV=production.
+          STAGING_S3_ENDPOINT: http://127.0.0.1:9000
+          S3_ENDPOINT: ${{ env.STAGING_S3_ENDPOINT }}
+          S3_REQUIRE_HTTPS: '0'
+      - name: Staging performance smoke
+        id: perf_probe
+        run: node tools/perf-smoke.mjs && test -s perf-smoke.json
+        working-directory: backend
+        env:
+          # Real external staging deployment, not the ephemeral runner-local
+          # services above -- performance budgets are only meaningful against
+          # the actual staging network path.
+          PERF_BASE_URL: ${{ env.STAGING_BASE_URL }}
+          PERF_REQUESTS: '500'
+          PERF_CONCURRENCY: '50'
+          PERF_P95_BUDGET_MS: '500'
+          PERF_P99_BUDGET_MS: '1000'
+          PERF_MAX_5XX_RATE: '0.01'
+      - name: Staging product workflow
+        id: product_workflow
+        run: node ../tools/staging-product-smoke.mjs
+        working-directory: backend
+        env:
+          STAGING_BASE_URL: ${{ env.STAGING_BASE_URL }}
+      - name: Staging external integration gate
+        id: provider_integration
+        run: npm run test:provider
+        working-directory: backend
+      - name: Probe notification delivery
+        id: notification_delivery
+        if: ${{ env.NOTIFICATION_PROVIDER_TOKEN != '' && (env.NOTIFICATION_PUSH_URL != '' || env.NOTIFICATION_EMAIL_URL != '') }}
+        run: |
+          set -o pipefail
+          node ../tools/staging-notification-delivery.mjs | tee "$RUNNER_TEMP/staging-notification-delivery.log"
+        working-directory: backend
+      - name: Android quality gates
+        timeout-minutes: 30
+        env:
+          API_BASE_URL: ${{ env.STAGING_BASE_URL }}
+          BUILD_PROFILE: pilot
+        run: |
+          # The canonical debug APK helper owns Flutter analysis/tests/build
+          # and APK verification. Keep a single execution path so CI cannot
+          # spend time rebuilding the same APK or produce split PASS signals.
+          bash tools/build_apk_debug.sh
+      - name: Android emulator certification
+        id: device_certification
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          script: |
+            flutter test --no-pub integration_test
+        env:
+          API_BASE_URL_STAGING: ${{ env.STAGING_BASE_URL }}
+          CI_DEVICE_INTEGRATION: 'true'
+      - name: Provision isolated DR target database
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'DROP DATABASE IF EXISTS hope_drill' \
+            -c 'CREATE DATABASE hope_drill'
+      - name: DR restore drill
+        id: dr_drill
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope_drill
+          DRILL_WORK_DIR: /tmp/hope-dr-drill
+          DRILL_EVIDENCE_FILE: /tmp/hope-dr-drill/dr-restore-evidence.json
+        run: |
+          bash scripts/dr-restore-drill.sh
+          test -s "$DRILL_EVIDENCE_FILE"
+        working-directory: backend
+      - name: Runtime gate - postgres runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.postgres_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate postgres_runtime --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - s3 runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.s3_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate s3_runtime --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - perf runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.perf_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate perf_run --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - device certification
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.device_certification.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate device_certification --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - dr restore
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.dr_drill.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate dr_restore --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - provider runtime
+        if: ${{ always() && steps.notification_delivery.conclusion != 'skipped' }}
+        env:
+          GATE_RESULT: ${{ (steps.product_workflow.outcome == 'success' && steps.provider_integration.outcome == 'success' && (steps.notification_delivery.outcome == 'success' || steps.notification_delivery.outcome == 'skipped')) && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate provider_runtime --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Provider runtime note
+        run: echo "Final human receipt is attested by the provider, not by this run"
+      - name: Upload staging certification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-certification-evidence
+          path: ${{ runner.temp }}
+      - name: Staging operational gate
+        id: emit_status
+        if: ${{ always() }}
+        run: |
+          status=FAIL
+          [ "${{ steps.postgres_probe.outcome }}" = success ] && \
+          [ "${{ steps.s3_probe.outcome }}" = success ] && \
+          [ "${{ steps.perf_probe.outcome }}" = success ] && \
+          [ "${{ steps.product_workflow.outcome }}" = success ] && \
+          [ "${{ steps.provider_integration.outcome }}" = success ] && \
+          [ "${{ steps.device_certification.outcome }}" = success ] && \
+          [ "${{ steps.dr_drill.outcome }}" = success ] && \
+          ( [ "${{ steps.notification_delivery.outcome }}" = success ] || [ "${{ steps.notification_delivery.outcome }}" = skipped ] ) && status=PASS
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Emit certification status
+        run: 'echo "Certification status: ${{ steps.emit_status.outputs.status }}"'

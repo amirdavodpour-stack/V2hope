@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-13T12:59:32.710Z",
+  "gitSha": "unknown",
+  "appVersion": "4.0.20+19",
+  "backendVersion": "4.0.20",
+  "toolchain": {
+    "flutter": null,
+    "dart": null,
+    "gradle": "8.14.3",
+    "androidGradlePlugin": null,
+    "kotlin": null,
+    "compileSdk": 36,
+    "targetSdk": 36,
+    "minSdk": 30,
+    "ndk": "28.2.13676358",
+    "java": null
+  },
+  "android": {
+    "applicationId": "com.hope.marketplace",
+    "versionName": "4.0.20",
+    "versionCode": 19
+  },
+  "apk": null,
+  "backendImage": null,
+  "dependencyState": {
+    "pubspecLock": "301a0e3218f299cfbfdfb668c865b6b561182f37ecbc1c9b699a3153f54e2b4c",
+    "backendPackageLock": "05d18b45ac3ffbcfa7ef4ab71af9ecd5c278e0047f9707f1a992725155d6839a",
+    "gradleWrapperProperties": "7e0821d895908883350587c74476b717016ab416320c44dc82a10def916c6fb5"
+  },
+  "sbomDigest": "983c99825cce6baca9c494dccdb7622f6e3ddd9631054fabca4110e67ab33d97",
+  "certification": {
+    "externalChecksRequired": true,
+    "source": "production-release workflow",
+    "stagingCertificationStatus": null,
+    "stagingCertificationRunId": null,
+    "stagingCertificationSha": null,
+    "stagingCertificationAttempt": null
+  }
+}

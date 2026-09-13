@@ -1,0 +1,62 @@
+name: DR Restore Drill
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dr_restore:
+    runs-on: ubuntu-latest
+    services:
+      source-db:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54321:5432
+      drill-db:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 54322:5432
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Backend install
+        run: npm ci
+        working-directory: backend
+      - name: Migrate source database
+        run: npm run migrate
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54321/hope
+      - name: Run restore drill
+        id: dr_drill
+        run: bash scripts/dr-restore-drill.sh
+        working-directory: backend
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54321/hope
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:54322/hope
+      - name: Runtime gate - dr restore
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.dr_drill.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate dr_restore --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Upload restore drill evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dr-restore-drill
+          path: ${{ runner.temp }}

@@ -1,0 +1,17 @@
+import test, { after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'hope-rec-')); process.env.DATA_FILE=path.join(tmp,'hope.json'); process.env.STORAGE_DIR=path.join(tmp,'storage'); process.env.NODE_ENV='test'; process.env.AUTH_RATE_LIMIT_MAX='1000'; process.env.GENERAL_RATE_LIMIT_MAX='5000';
+const {createServer}=await import('../src/app.js'); const {db}=await import('../src/db.js');
+const server=createServer(); await new Promise(r=>server.listen(0,'127.0.0.1',r)); const base=`http://127.0.0.1:${server.address().port}/api/v1`;
+const json=(u,o={})=>fetch(base+u,{...o,headers:{'Content-Type':'application/json',...(o.headers||{})}}).then(async r=>({status:r.status,body:await r.json()}));
+async function register(email){const r=await json('/auth/register',{method:'POST',body:JSON.stringify({email,password:'pass123456789',displayName:email})});assert.equal(r.status,201);return r.body.data;}
+async function create(token,{city,kind='JOB',categoryId}){const body={title:`${city}-${kind}`,description:'A long enough recommendation test opportunity description.',categoryId,jobType:kind==='JOB'?'HOURLY':'FIXED',budgetType:'FIXED',budgetMin:kind==='JOB'?10000:1000,budgetMax:kind==='JOB'?10000:1000,duration:kind==='JOB'?30:2,acceptanceCriteria:'Valid criteria',city,kind,visibility:'PUBLIC',...(kind==='JOB'?{schedule:'FULL_TIME',monthlySalary:10000,applicationDeadline:'2099-12-31'}:{})};const r=await json('/jobs',{method:'POST',headers:{Authorization:`Bearer ${token}`},body:JSON.stringify(body)});assert.equal(r.status,201);await json(`/jobs/${r.body.data.id}/publish`,{method:'POST',headers:{Authorization:`Bearer ${token}`}});}
+
+test('recommended jobs rank same-city opportunities first and expose explainable reasons',async()=>{const owner=await register('rec-owner@example.com');const cats=await json('/categories');const cat=cats.body.data[0].id;await create(owner.accessToken,{city:'تهران',categoryId:cat});await create(owner.accessToken,{city:'شیراز',categoryId:cat});await create(owner.accessToken,{city:'آنلاین',categoryId:cat});const r=await json('/jobs/recommended?city=%D8%AA%D9%87%D8%B1%D8%A7%D9%86&lat=35.6892&lng=51.3890');assert.equal(r.status,200);assert.equal(r.body.data[0].city,'تهران');assert.ok(r.body.data[0].recommendationScore>r.body.data[1].recommendationScore);assert.ok(r.body.data[0].recommendationReasons.includes('VERY_NEAR'));});
+
+test('recommended endpoint validates coordinate pairs and ranges',async()=>{let r=await json('/jobs/recommended?lat=1');assert.equal(r.status,400);assert.equal(r.body.error.code,'INVALID_COORDINATE');r=await json('/jobs/recommended?lat=100&lng=0');assert.equal(r.status,400);assert.equal(r.body.error.code,'INVALID_COORDINATE');});
+
+test('kind and category filters constrain recommendations server-side',async()=>{const owner=await register('rec-filter@example.com');const cats=await json('/categories');const cat=cats.body.data[0].id;await create(owner.accessToken,{city:'تهران',categoryId:cat,kind:'MISSION'});await create(owner.accessToken,{city:'تهران',categoryId:cat,kind:'JOB'});const r=await json(`/jobs/recommended?city=%D8%AA%D9%87%D8%B1%D8%A7%D9%86&kind=MISSION&categoryId=${encodeURIComponent(cat)}`);assert.equal(r.status,200);assert.ok(r.body.data.length>=1);assert.ok(r.body.data.every(x=>x.kind==='MISSION'&&String(x.categoryId)===String(cat)));});
+
+after(async()=>{await db.flush();server.close();});

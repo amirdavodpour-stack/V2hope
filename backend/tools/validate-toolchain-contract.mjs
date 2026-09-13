@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+
+const root = path.resolve(new URL('../..', import.meta.url).pathname);
+const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
+const pubspec = read('pubspec.yaml');
+const flutterMatch = read('android/ANDROID-CONFIG.md').match(/Flutter baseline:\s*`([^`]+)`/);
+const flutterBaseline = flutterMatch?.[1];
+assert.equal(flutterBaseline, '3.47.2');
+const workflows = fs.readdirSync(path.join(root, '.github/workflows')).filter((n) => n.endsWith('.yml') || n.endsWith('.yaml')).map((n) => read(`.github/workflows/${n}`)).join('\n');
+const flutterVersions = [...workflows.matchAll(/flutter-version:\s*['\"]?([^\s'\"]+)/g)].map((m) => m[1]);
+assert.ok(flutterVersions.length > 0);
+assert.ok(flutterVersions.every((v) => v === '3.47.2'), `unexpected Flutter versions: ${flutterVersions.join(', ')}`);
+assert.match(workflows, /node-version:\s*['"]?24/);
+const nvm = read('.nvmrc').trim();
+assert.equal(nvm, '24');
+const gradle = read('android/gradle/wrapper/gradle-wrapper.properties');
+assert.match(gradle, /gradle-8\.14\.3-bin\.zip/);
+const app = read('android/app/build.gradle.kts');
+assert.match(app, /versionCode = appVersionCode/);
+assert.match(app, /versionName = appVersionName/);
+assert.doesNotMatch(app, /versionCode = \d+/);
+assert.doesNotMatch(app, /versionName = "\d+\.\d+\.\d+"/);
+console.log('TOOLCHAIN_CONTRACT_PASS');

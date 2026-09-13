@@ -1,0 +1,26 @@
+item,last_verified_session,last_result,relevant_change?,rerun_needed?,rationale
+backend-fast,20260913T032022Z,217/217 PASS,no,no,No backend source or dependency manifest changed this session (deep-audit only touched tooling; this session ran npm install/audit only)
+backend-contract,20260913T032022Z,71/71 PASS,no,no,No backend source change; zero-duplicate rule
+backend-full,20260913T032022Z,524/529 PASS (5 suite-defined skips, 0 fail),no,no,No backend source change; zero-duplicate rule
+backend-coverage-gate,20260913T032022Z,81.21/70.87/74.02 PASS (gate 70/60/65),no,no,No backend source change
+postgres-isolated,20260913T032022Z,3x 4/4 PASS, 0 leftover DBs,no,no,PostgreSQL tooling unchanged; local PostgreSQL also ABSENT on this runner so rerun would be BLOCKED anyway
+dr-restore,prebuild-qual-20260913T021809Z,PASS,no,no,No DR configuration or backup tooling changed
+security-contract-suites,20260913T032022Z,PASS (inside backend-fast 217/217),no,no,No backend source change
+security-npm-audit,20260913T063720Z (THIS SESSION),PASS 0 vulnerabilities rc=0,yes - previously blocked by registry DNS,n/a - revalidated this session,Registry now reachable; audit executed fresh against registry.npmjs.org
+payments-contract-provider-simulator,20260913T032022Z,PASS,no,no,No payment source/config change
+notifications-contracts-provider-failure-injection,20260913T032022Z,PASS,no,no,No notification source/config change
+agent-handoff,20260913T032022Z,6/6 PASS,no,no,No handoff contract file changed
+production-persistence-boundary,20260913T032022Z,2/2 PASS,no,no,No persistence source change
+executable-permissions,20260913T032022Z,27/27 PASS,no,no,No new executable added
+packaging-validation,20260913T032022Z,PASS (no APK/AAB, no node_modules, no local.properties),no,no,Re-verified by inspection this session (find: no *.apk/*.aab; node_modules freshly removed before packaging)
+flutter-tests,20260913T040220Z,414/414 PASS,no,no,No Flutter source/test change this session
+flutter-analyze,20260913T040220Z,0 issues,no,No Flutter source change
+flutter-coverage,20260913T040220Z,78.26% >= 65% PASS (GAP-A CLOSED),no,No Flutter source change
+perf-smoke,prebuild-qual-20260913T021809Z,EXPECTED_RATE_LIMIT_POLICY_LIMIT (0x5xx, p95 within budget),no,no,Policy-classified; sanctioned load-test mechanism absent; must not re-run nor alter rate limiter
+score-90plus,20260913T063720Z (THIS SESSION),allAtLeast90=false; overallReadiness 91; minScore 69,yes - re-executed to derive CERTIFICATION-GAP-MAP,done,Read-only scoring engine run; thresholds untouched
+status-integrity,20260913T040220Z,PASS,yes - state files will be re-synced to this session,done at end of session,Validator enforces cross-file session consistency
+android-gradle-instrumentation,none,BLOCKED (no Android SDK/adb/emulator),no,no,SDK absent; runner RAM 1989 MiB < 6144 MiB policy floor -> class E blocker; install would be unsafe/incomplete
+docker-containerized,none,BLOCKED (no Docker/podman/container runtime),no,no,No container runtime present; rootless install on 2 vCPU/1.9 GiB runner is class E/F blocker
+s3-integration,none,BLOCKED (no S3/R2 credentials),no,no,S3_INTEGRATION/S3_ENDPOINT absent -> class C blocker; do not invent credentials
+staging-runtime,none,BLOCKED (STAGING_BASE_URL absent),no,no,Class C/D blocker; no non-secret staging config present
+certified-runner,20260913T063720Z (THIS SESSION),FAIL ci-resource-guard rc=2 (1989 MiB < 6144 MiB),yes - probed with official guard this session,done,Official fail-closed guard confirms underpowered runner -> class E

@@ -1,0 +1,8 @@
+# Config for `flutter gen-l10n`, which the Flutter SDK runs automatically
+# whenever `flutter: generate: true` is set in pubspec.yaml (i.e. on every
+# `flutter pub get` / `flutter run` / `flutter build`). See docs/I18N.md.
+arb-dir: lib/l10n
+template-arb-file: app_fa.arb
+output-localization-file: app_localizations.dart
+output-dir: lib/l10n/generated
+nullable-getter: false

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- HOPE native splash: deep brand background + centered mark. Kept
+     minimal on purpose (no wordmark, no animation) per brand guidance —
+     this is only visible for the brief moment before Flutter takes over. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/hopeSplashBackground" />
+    <item android:gravity="center" android:drawable="@drawable/hope_splash_mark" />
+</layer-list>

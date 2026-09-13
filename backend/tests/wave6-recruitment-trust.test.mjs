@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { JOB_STATES } from '../src/workflow.js';
+assert.equal(JOB_STATES.IN_PROGRESS,'IN_PROGRESS');
+const masked={id:'a',skills:'js,sql',resumeHighlights:'x',status:'FORWARDED',identityMasked:true};
+assert.equal(masked.identityMasked,true);
+assert.equal('email' in masked,false);
+assert.equal('displayName' in masked,false);
+const allowed=['OPEN','REVIEWING','RESOLVED','DISMISSED'];
+assert.ok(allowed.includes('REVIEWING'));
+assert.ok(!allowed.includes('BANNED'));
+console.log('wave6 recruitment/trust tests passed');

@@ -1,0 +1,303 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:e4f200ea-32a9-41b4-9ab1-8495b9346021",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-13T12:59:32.584Z",
+    "component": {
+      "type": "application",
+      "name": "hope-api",
+      "version": "4.0.20"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "@aws-sdk/checksums",
+      "version": "3.1000.29",
+      "purl": "pkg:npm/%40aws-sdk%2Fchecksums@3.1000.29",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/client-s3",
+      "version": "3.1116.0",
+      "purl": "pkg:npm/%40aws-sdk%2Fclient-s3@3.1116.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/core",
+      "version": "3.977.9",
+      "purl": "pkg:npm/%40aws-sdk%2Fcore@3.977.9",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-env",
+      "version": "3.972.70",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-env@3.972.70",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-http",
+      "version": "3.972.72",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-http@3.972.72",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-ini",
+      "version": "3.973.15",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-ini@3.973.15",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-login",
+      "version": "3.972.77",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-login@3.972.77",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-node",
+      "version": "3.972.81",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-node@3.972.81",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-process",
+      "version": "3.972.70",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-process@3.972.70",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-sso",
+      "version": "3.973.14",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-sso@3.973.14",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/credential-provider-web-identity",
+      "version": "3.972.76",
+      "purl": "pkg:npm/%40aws-sdk%2Fcredential-provider-web-identity@3.972.76",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/middleware-sdk-s3",
+      "version": "3.972.75",
+      "purl": "pkg:npm/%40aws-sdk%2Fmiddleware-sdk-s3@3.972.75",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/nested-clients",
+      "version": "3.997.44",
+      "purl": "pkg:npm/%40aws-sdk%2Fnested-clients@3.997.44",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/s3-request-presigner",
+      "version": "3.1116.0",
+      "purl": "pkg:npm/%40aws-sdk%2Fs3-request-presigner@3.1116.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/signature-v4-multi-region",
+      "version": "3.996.46",
+      "purl": "pkg:npm/%40aws-sdk%2Fsignature-v4-multi-region@3.996.46",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/token-providers",
+      "version": "3.1116.0",
+      "purl": "pkg:npm/%40aws-sdk%2Ftoken-providers@3.1116.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/types",
+      "version": "3.974.5",
+      "purl": "pkg:npm/%40aws-sdk%2Ftypes@3.974.5",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws-sdk/xml-builder",
+      "version": "3.972.40",
+      "purl": "pkg:npm/%40aws-sdk%2Fxml-builder@3.972.40",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@aws/lambda-invoke-store",
+      "version": "0.3.0",
+      "purl": "pkg:npm/%40aws%2Flambda-invoke-store@0.3.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/core",
+      "version": "3.33.3",
+      "purl": "pkg:npm/%40smithy%2Fcore@3.33.3",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/credential-provider-imds",
+      "version": "4.5.2",
+      "purl": "pkg:npm/%40smithy%2Fcredential-provider-imds@4.5.2",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/fetch-http-handler",
+      "version": "5.7.2",
+      "purl": "pkg:npm/%40smithy%2Ffetch-http-handler@5.7.2",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/node-http-handler",
+      "version": "4.11.3",
+      "purl": "pkg:npm/%40smithy%2Fnode-http-handler@4.11.3",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/signature-v4",
+      "version": "5.7.3",
+      "purl": "pkg:npm/%40smithy%2Fsignature-v4@5.7.3",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "@smithy/types",
+      "version": "4.17.2",
+      "purl": "pkg:npm/%40smithy%2Ftypes@4.17.2",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "bowser",
+      "version": "2.14.1",
+      "purl": "pkg:npm/bowser@2.14.1",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-cloudflare",
+      "version": "1.4.0",
+      "purl": "pkg:npm/pg-cloudflare@1.4.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-connection-string",
+      "version": "2.14.0",
+      "purl": "pkg:npm/pg-connection-string@2.14.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-int8",
+      "version": "1.0.1",
+      "purl": "pkg:npm/pg-int8@1.0.1",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-pool",
+      "version": "3.14.0",
+      "purl": "pkg:npm/pg-pool@3.14.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-protocol",
+      "version": "1.16.0",
+      "purl": "pkg:npm/pg-protocol@1.16.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg-types",
+      "version": "2.2.0",
+      "purl": "pkg:npm/pg-types@2.2.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pg",
+      "version": "8.23.0",
+      "purl": "pkg:npm/pg@8.23.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "pgpass",
+      "version": "1.0.5",
+      "purl": "pkg:npm/pgpass@1.0.5",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-array",
+      "version": "2.0.0",
+      "purl": "pkg:npm/postgres-array@2.0.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-bytea",
+      "version": "1.0.1",
+      "purl": "pkg:npm/postgres-bytea@1.0.1",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-date",
+      "version": "1.0.7",
+      "purl": "pkg:npm/postgres-date@1.0.7",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "postgres-interval",
+      "version": "1.2.0",
+      "purl": "pkg:npm/postgres-interval@1.2.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "split2",
+      "version": "4.2.0",
+      "purl": "pkg:npm/split2@4.2.0",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "tslib",
+      "version": "2.8.1",
+      "purl": "pkg:npm/tslib@2.8.1",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "name": "xtend",
+      "version": "4.0.2",
+      "purl": "pkg:npm/xtend@4.0.2",
+      "scope": "required"
+    }
+  ]
+}

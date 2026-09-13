@@ -1,0 +1,108 @@
+{
+  "project": "HOPE-V7 (HOPE Marketplace, hope-api 3.8.0 / hope_mobile 3.8.0+11)",
+  "test_session_id": "pre-cert-local-20260913T064306Z",
+  "started_at": "2026-09-13T06:43:06Z",
+  "finished_at": "2026-09-13T06:45:00Z",
+  "environment": {
+    "os": "Linux x86_64 (2 vCPU, ~1.9 GiB RAM)",
+    "node": "v24.21.0",
+    "npm": "11.19.0",
+    "java": "OpenJDK 21",
+    "flutter": "3.47.2 stable (Dart 3.13.2)",
+    "postgres": "16.15 running",
+    "android_sdk": "NOT AVAILABLE",
+    "docker": "NOT AVAILABLE",
+    "s3_credentials": "NOT AVAILABLE",
+    "staging_base_url": "NOT AVAILABLE",
+    "project_required_java": "17",
+    "project_required_android_sdk": "36",
+    "project_required_flutter": "3.47.2",
+    "npm_audit_current_session": "PASS 0 vulnerabilities (registry reachable)",
+    "certified_runner": "FAIL ci-resource-guard rc=2 (RAM 1989 MiB < 6144 MiB)",
+    "node_runtime_this_session": "v22.23.2 (project engine >=24 <25; backend suites NOT re-run, so not exercised)"
+  },
+  "totals": {
+    "backend": {
+      "pass": 524,
+      "fail": 0,
+      "skipped": 5,
+      "note": "524 pass / 0 fail / 5 suite-defined skips of 529 in full backend npm test"
+    },
+    "flutter": {
+      "status": "PASS (414/414)",
+      "count": 414,
+      "passed": 414,
+      "failed": 0,
+      "skipped": 0,
+      "coverage_line": 78.26,
+      "note": "414/414 PASS; line coverage 78.26% >= 65% gate; analyze 0 issues"
+    },
+    "postgres_isolated": {
+      "pass": 4,
+      "fail": 0,
+      "runs": 3
+    },
+    "overall_note": "backend umbrella + postgres isolated + DR drill + provider; security audit 0 high+; gates except coverage/perf/scorecard pass",
+    "maintenance_regression": {
+      "production_persistence_boundary": "2/2 PASS",
+      "executable_permissions": "27/27 PASS"
+    }
+  },
+  "coverage": {
+    "backend": {
+      "line": "81.22",
+      "branch": "70.65",
+      "functions": "74.02",
+      "gate": "70/60/65",
+      "status": "PASS (81.22/70.65/74.02)"
+    },
+    "flutter": {
+      "line": 78.26,
+      "gate": "65",
+      "status": "PASS (78.26>=65)"
+    }
+  },
+  "performance": {
+    "classification": "EXPECTED RATE-LIMIT POLICY LIMIT; no 5xx; latency far under budget",
+    "conc1": {
+      "ok": 67,
+      "err4": 133,
+      "p95": 1.84
+    },
+    "conc2": {
+      "ok": 67,
+      "err4": 133
+    },
+    "conc10": {
+      "ok": 187,
+      "err4": 13,
+      "p95": 12.62,
+      "p99": 23.86
+    }
+  },
+  "postgres": {
+    "isolated_runner": "backend/tools/run-postgres-isolated.mjs",
+    "runs": "3 clean, 4/4 PASS each, 0 leftover hope_test_% DBs"
+  },
+  "critical_failures": [
+    "perf-smoke successRate < 0.995 -> expected rate-limit policy limit (prior session evidence, not re-run)",
+    "score:90plus allAtLeast90=false due unproven runtime gates (mapped in CERTIFICATION-GAP-MAP.md)"
+  ],
+  "critical_blockers": [
+    "Android SDK/adb/emulator absent (class E - RAM floor)",
+    "Docker absent",
+    "S3_INTEGRATION absent (class C)",
+    "STAGING absent (class C/D)",
+    "6144 MiB certified runner unavailable (guard rc=2)",
+    "local PostgreSQL absent (runtime evidence gates are CI-routable, class D)"
+  ],
+  "final_build_performed": false,
+  "deployment_performed": false,
+  "overall_note": "Local certification-prep maintenance session: added CHANGELOG.md, SECURITY-THREAT-MODEL.md, and CERTIFICATION-RUNBOOK.md; recomputed scorecard read-only; no application source modified and no previously-green suite rerun.",
+  "maintenance_only": true,
+  "scorecard_local_recomputed": {
+    "overallReadiness": 92,
+    "allAtLeast90": false,
+    "minScore": 69
+  }
+}

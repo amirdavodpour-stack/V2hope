@@ -1,0 +1,1180 @@
+{
+  "@@locale": "fa",
+  "backButtonTooltip": "بازگشت",
+  "@backButtonTooltip": {
+    "description": "Accessibility tooltip on back-navigation icon buttons across the app."
+  },
+  "loginWelcomeBack": "خوش برگشتی.",
+  "@loginWelcomeBack": {
+    "description": "Headline shown on the login page."
+  },
+  "loginWelcomeBackSubtitle": "به فضای کارت برگرد و ادامه بده.",
+  "@loginWelcomeBackSubtitle": {
+    "description": "Subtitle shown under the login page headline."
+  },
+  "emailLabel": "ایمیل",
+  "@emailLabel": {
+    "description": "Label for the email text field, reused across auth pages."
+  },
+  "passwordLabel": "رمز عبور",
+  "@passwordLabel": {
+    "description": "Label for the password text field, reused across auth pages."
+  },
+  "showPasswordTooltip": "نمایش رمز عبور",
+  "@showPasswordTooltip": {
+    "description": "Tooltip on the password-visibility toggle when the password is currently hidden."
+  },
+  "hidePasswordTooltip": "پنهان کردن رمز عبور",
+  "@hidePasswordTooltip": {
+    "description": "Tooltip on the password-visibility toggle when the password is currently visible."
+  },
+  "forgotPassword": "رمز عبورت را فراموش کردی؟",
+  "@forgotPassword": {
+    "description": "Link to the password-reset page from the login page."
+  },
+  "loginButton": "ورود به HOPE",
+  "@loginButton": {
+    "description": "Primary submit button on the login page."
+  },
+  "continueAsGuest": "فعلاً به‌عنوان مهمان ادامه بده",
+  "@continueAsGuest": {
+    "description": "Button to skip login and browse as a guest."
+  },
+  "orDivider": "یا",
+  "@orDivider": {
+    "description": "Divider text between the login form and the sign-up link."
+  },
+  "noAccountSignUp": "حساب نداری؟ ساخت حساب",
+  "@noAccountSignUp": {
+    "description": "Link to the registration page from the login page."
+  },
+  "loginTermsNotice": "ورود به معنای پذیرش قوانین استفاده HOPE است.",
+  "@loginTermsNotice": {
+    "description": "Fine-print notice at the bottom of the login page."
+  },
+  "emailPasswordRequired": "ایمیل و رمز عبور را وارد کن.",
+  "@emailPasswordRequired": {
+    "description": "Validation message shown when the user submits the login form with an empty email or password."
+  },
+  "loginFailedGeneric": "ورود ناموفق بود. دوباره تلاش کن.",
+  "@loginFailedGeneric": {
+    "description": "Fallback error message shown when login fails without a more specific server-provided message."
+  },
+  "copy_10_from_the_employer_and_10_from_the_candi_cf15dfa": "۱۰٪ از کارفرما و ۱۰٪ از کارجو؛ مبلغ کارمزد در صفحه معامله شفاف نمایش داده می‌شود.",
+  "@copy_10_from_the_employer_and_10_from_the_candi_cf15dfa": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_30_of_the_candidate_s_first_month_pay_is_c_d6da53b": "۳۰٪ از دستمزد ماه اول کارجو از سمت کارفرما دریافت می‌شود.",
+  "@copy_30_of_the_candidate_s_first_month_pay_is_c_d6da53b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_better_path_to_finding_work_5802652": "مسیر بهتر برای پیدا کردن کار",
+  "@copy_a_better_path_to_finding_work_5802652": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_clearer_more_human_way_to_find_work_3553ab8": "اینجا قرار است پیدا کردن کار، واضح‌تر و انسانی‌تر باشد.",
+  "@copy_a_clearer_more_human_way_to_find_work_3553ab8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_defined_task_with_a_clear_price_and_deli_bf299f3": "یک کار مشخص، با مبلغ مشخص و مسیر تحویل روشن.",
+  "@copy_a_defined_task_with_a_clear_price_and_deli_bf299f3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_defined_task_with_defined_pay_77b1068": "یک کار مشخص با مبلغ مشخص",
+  "@copy_a_defined_task_with_defined_pay_77b1068": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_home_for_your_professional_path_52dbb09": "یک خانه برای مسیر حرفه‌ای تو.",
+  "@copy_a_home_for_your_professional_path_52dbb09": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_a_part_time_or_full_time_role_with_monthly_ac5f029": "همکاری پاره‌وقت یا تمام‌وقت با دستمزد ماهانه.",
+  "@copy_a_part_time_or_full_time_role_with_monthly_ac5f029": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_about_hope_f8ee86b": "درباره HOPE",
+  "@copy_about_hope_f8ee86b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_accept_delivery_195e8bd": "تأیید تحویل",
+  "@copy_accept_delivery_195e8bd": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_acceptance_criteria_f213cb2": "معیار پذیرش",
+  "@copy_acceptance_criteria_f213cb2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_acceptance_selection_criteria_a061aef": "معیار پذیرش / شرایط انتخاب",
+  "@copy_acceptance_selection_criteria_a061aef": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_activate_2215693": "فعال‌سازی",
+  "@copy_activate_2215693": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_active_5726b26": "فعال",
+  "@copy_active_5726b26": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_active_account_bef80da": "حساب فعال",
+  "@copy_active_account_bef80da": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_activity_4b38716": "فعالیت",
+  "@copy_activity_4b38716": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_add_a_concise_resume_and_relevant_skills_298a4f1": "رزومه متنی و مهارت‌های مرتبط را وارد کن.",
+  "@copy_add_a_concise_resume_and_relevant_skills_298a4f1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_admin_panel_348cd94": "مدیریت ادمین",
+  "@copy_admin_panel_348cd94": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_admins_can_remove_opportunities_that_viola_82df522": "ادمین می‌تواند فرصت‌های نامناسب یا ناسازگار با قوانین HOPE را حذف کند.",
+  "@copy_admins_can_remove_opportunities_that_viola_82df522": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_all_ba7d5b6": "همه",
+  "@copy_all_ba7d5b6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_all_fields_4f77401": "همه حوزه‌ها",
+  "@copy_all_fields_4f77401": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_amount_6400812": "مبلغ",
+  "@copy_amount_6400812": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_anonymous_candidate_ba01a0d": "نامزد بدون اطلاعات هویتی",
+  "@copy_anonymous_candidate_ba01a0d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_app_language_789c9c4": "زبان برنامه",
+  "@copy_app_language_789c9c4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_appearance_c90f540": "ظاهر برنامه",
+  "@copy_appearance_c90f540": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_application_deadline_0a6c25c": "مهلت درخواست",
+  "@copy_application_deadline_0a6c25c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_application_deadline_782fb61": "مهلت دریافت درخواست",
+  "@copy_application_deadline_782fb61": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_applications_6655869": "درخواست‌ها",
+  "@copy_applications_6655869": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_apply_1b61105": "پیشنهاد بده",
+  "@copy_apply_1b61105": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_apply_for_this_job_3a75a03": "درخواست برای این شغل",
+  "@copy_apply_for_this_job_3a75a03": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_apply_to_this_job_923b353": "درخواست برای این شغل",
+  "@copy_apply_to_this_job_923b353": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_apply_with_a_strong_professional_profile_13980b1": "با رزومه و پیشنهاد حرفه‌ای وارد شو.",
+  "@copy_apply_with_a_strong_professional_profile_13980b1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_as_described_in_the_opportunity_836cb3e": "مطابق شرح فرصت و توافق طرفین.",
+  "@copy_as_described_in_the_opportunity_836cb3e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_at_least_8_characters_eb24592": "حداقل ۸ کاراکتر",
+  "@copy_at_least_8_characters_eb24592": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_audience_visibility_5a0ddcb": "مخاطب و دیده‌شدن",
+  "@copy_audience_visibility_5a0ddcb": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_audit_events_7f47fd5": "رویدادهای ثبت‌شده",
+  "@copy_audit_events_7f47fd5": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_audit_log_ff87181": "گزارش فعالیت",
+  "@copy_audit_log_ff87181": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_back_6e09f79": "بازگشت",
+  "@copy_back_6e09f79": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_base_amount_82586c0": "مبلغ پایه",
+  "@copy_base_amount_82586c0": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_based_on_city_and_professional_interests_e0ba2f1": "با توجه به شهر و علایق حرفه‌ای",
+  "@copy_based_on_city_and_professional_interests_e0ba2f1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_based_on_your_city_and_preferences_79e2a31": "بر اساس شهر انتخابی و ترجیحاتت",
+  "@copy_based_on_your_city_and_preferences_79e2a31": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_broaden_your_filters_or_try_another_city_e8e32cb": "فیلترها را کمی بازتر کن یا شهر دیگری را امتحان کن.",
+  "@copy_broaden_your_filters_or_try_another_city_e8e32cb": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_cancel_9955c4b": "انصراف",
+  "@copy_cancel_9955c4b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_candidate_c67d7bf": "کارجو",
+  "@copy_candidate_c67d7bf": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_candidate_identity_stays_hidden_during_sel_6a73883": "اطلاعات هویتی کارجو برای جلوگیری از تبانی در مرحله انتخاب مخفی می‌ماند.",
+  "@copy_candidate_identity_stays_hidden_during_sel_6a73883": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_79a9d79": "انتخاب کن",
+  "@copy_choose_79a9d79": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_a_category_b77d860": "دسته‌بندی را انتخاب کن",
+  "@copy_choose_a_category_b77d860": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_a_city_a93b334": "شهر را انتخاب کن",
+  "@copy_choose_a_city_a93b334": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_a_professional_category_b4cf5b8": "حوزه تخصصی را انتخاب کن.",
+  "@copy_choose_a_professional_category_b4cf5b8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_another_city_1375095": "انتخاب شهر دیگر",
+  "@copy_choose_another_city_1375095": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_choose_your_preferred_city_c19f66a": "شهر مورد نظر را انتخاب کن",
+  "@copy_choose_your_preferred_city_c19f66a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_city_3d7dc3e": "شهر",
+  "@copy_city_3d7dc3e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_compact_cards_71ed24c": "کارت‌های فشرده",
+  "@copy_compact_cards_71ed24c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_completed_4ab501b": "تمام شد",
+  "@copy_completed_4ab501b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_connection_failed_1b34bc9": "اتصال برقرار نشد",
+  "@copy_connection_failed_1b34bc9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_control_center_15e20c8": "کنترل مرکزی",
+  "@copy_control_center_15e20c8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_controls_that_make_hope_fit_you_better_ace4c0c": "چیزهایی که تجربه HOPE را برای تو دقیق‌تر می‌کنند.",
+  "@copy_controls_that_make_hope_fit_you_better_ace4c0c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_could_not_load_activity_335b923": "دریافت فعالیت ناموفق بود",
+  "@copy_could_not_load_activity_335b923": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_could_not_load_notifications_a904a88": "دریافت اعلان‌ها ممکن نشد.",
+  "@copy_could_not_load_notifications_a904a88": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_could_not_submit_evidence_9d09019": "ثبت مدرک انجام نشد.",
+  "@copy_could_not_submit_evidence_9d09019": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_create_a_hope_account_and_take_the_first_s_9ccd119": "یک حساب HOPE بساز و قدم اول را بردار.",
+  "@copy_create_a_hope_account_and_take_the_first_s_9ccd119": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_create_account_bfa3517": "ساخت حساب",
+  "@copy_create_account_bfa3517": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_create_an_account_or_log_in_to_post_opport_6bc74a1": "برای پیشنهاد دادن یا ثبت فرصت، یک حساب بساز یا وارد حساب خودت شو.",
+  "@copy_create_an_account_or_log_in_to_post_opport_6bc74a1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_create_an_account_to_apply_post_and_person_6fd6b91": "حساب بساز تا پیشنهاد بدهی، فرصت ثبت کنی و تنظیمات شخصی داشته باشی.",
+  "@copy_create_an_account_to_apply_post_and_person_6fd6b91": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_current_location_182622a": "موقعیت فعلی",
+  "@copy_current_location_182622a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_dark_c5832d8": "تاریک",
+  "@copy_dark_c5832d8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_deadline_ffa13f2": "مهلت",
+  "@copy_deadline_ffa13f2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_decide_whether_you_want_a_mission_or_a_job_3a6f9b5": "ماموریت می‌خواهی یا شغل.",
+  "@copy_decide_whether_you_want_a_mission_or_a_job_3a6f9b5": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_defined_tasks_with_clear_pay_9120d5e": "کارهای مشخص با مبلغ مشخص",
+  "@copy_defined_tasks_with_clear_pay_9120d5e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_delete_b17eb9d": "حذف",
+  "@copy_delete_b17eb9d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_deliver_work_49b9e5e": "تحویل کار",
+  "@copy_deliver_work_49b9e5e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_disable_73bea34": "غیرفعال‌کردن",
+  "@copy_disable_73bea34": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_duration_cc42be6": "مدت انجام",
+  "@copy_duration_cc42be6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_duration_hours_f4ca1cf": "مدت (ساعت)",
+  "@copy_duration_hours_f4ca1cf": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_email_0cc870e": "ایمیل",
+  "@copy_email_0cc870e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_employer_charge_9740283": "مبلغ پرداختی کارفرما",
+  "@copy_employer_charge_9740283": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_employer_fee_3a30b60": "کارمزد کارفرما",
+  "@copy_employer_fee_3a30b60": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_english_8396fe3": "انگلیسی",
+  "@copy_english_8396fe3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_enter_your_account_email_and_we_will_start_16caa6e": "ایمیل حساب را وارد کن؛ راهنمای بازیابی برایت ارسال می‌شود.",
+  "@copy_enter_your_account_email_and_we_will_start_16caa6e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_enter_your_email_2562106": "ایمیل را وارد کن.",
+  "@copy_enter_your_email_2562106": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_explore_115e9fd": "کاوش",
+  "@copy_explore_115e9fd": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_explore_837e4eb": "پیدا کن",
+  "@copy_explore_837e4eb": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_explore_a80d678": "شروع کاوش",
+  "@copy_explore_a80d678": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_explore_missions_jobs_3846ebd": "کاوش ماموریت‌ها و شغل‌ها",
+  "@copy_explore_missions_jobs_3846ebd": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_field_fcb7b26": "حوزه",
+  "@copy_field_fcb7b26": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_filter_by_city_field_and_opportunity_type_1d75340": "شهر، حوزه و نوع فرصت را فیلتر کن.",
+  "@copy_filter_by_city_field_and_opportunity_type_1d75340": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_filters_df4d10e": "فیلترها",
+  "@copy_filters_df4d10e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_financial_details_f24007d": "جزئیات مالی",
+  "@copy_financial_details_f24007d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_find_the_right_opportunity_or_create_one_c8a9e6f": "فرصت مناسب را پیدا کن یا فرصتت را بساز.",
+  "@copy_find_the_right_opportunity_or_create_one_c8a9e6f": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_first_choose_what_kind_of_opportunity_you__f035ca9": "اول مشخص کن دنبال چه نوع همکاری هستی.",
+  "@copy_first_choose_what_kind_of_opportunity_you__f035ca9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_fit_more_information_on_a_page_aedc497": "اطلاعات بیشتری در یک صفحه",
+  "@copy_fit_more_information_on_a_page_aedc497": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_for_a_specific_field_9b79bd6": "برای حوزه مشخص",
+  "@copy_for_a_specific_field_9b79bd6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_for_everyone_ebc769c": "برای همه کارجوها",
+  "@copy_for_everyone_ebc769c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_for_jobs_admins_send_only_the_professional_e6e694e": "در فرایند انتخاب شغلی، ادمین فقط رزومه و اطلاعات حرفه‌ای لازم را برای کارفرما ارسال می‌کند.",
+  "@copy_for_jobs_admins_send_only_the_professional_e6e694e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_for_security_the_response_is_intentionally_6574fa6": "برای حفظ امنیت، حتی در صورت نبودن حساب هم پاسخ مشابهی دریافت می‌کنی.",
+  "@copy_for_security_the_response_is_intentionally_6574fa6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_forward_5ec70ea": "ارسال",
+  "@copy_forward_5ec70ea": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_forward_to_employer_0baa2e1": "ارسال به کارفرما",
+  "@copy_forward_to_employer_0baa2e1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_forwarded_candidates_5de386c": "نامزدهای منتخب",
+  "@copy_forwarded_candidates_5de386c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_full_description_c4dea43": "شرح کامل",
+  "@copy_full_description_c4dea43": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_full_name_c7448f1": "نام و نام خانوادگی",
+  "@copy_full_name_c7448f1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_full_time_1e4bd4e": "تمام‌وقت",
+  "@copy_full_time_1e4bd4e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_fund_payment_c223336": "تأمین بودجه",
+  "@copy_fund_payment_c223336": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hello_fc7ef4a": "سلام",
+  "@copy_hello_fc7ef4a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hire_36ed063": "استخدام",
+  "@copy_hire_36ed063": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_home_ce76258": "خانه",
+  "@copy_home_ce76258": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_account_4ba3966": "حساب HOPE",
+  "@copy_hope_account_4ba3966": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_admin_center_912aa06": "مرکز مدیریت HOPE",
+  "@copy_hope_admin_center_912aa06": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_fee_2ea514e": "کارمزد HOPE",
+  "@copy_hope_fee_2ea514e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_friend_b997e02": "دوست HOPE",
+  "@copy_hope_friend_b997e02": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_revenue_model_8506ac2": "مدل درآمدی HOPE",
+  "@copy_hope_revenue_model_8506ac2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hours_7408608": "ساعت",
+  "@copy_hours_7408608": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_how_hope_works_bea7074": "در HOPE چه اتفاقی می‌افتد؟",
+  "@copy_how_hope_works_bea7074": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_if_the_account_exists_a_reset_request_has__b974d8e": "اگر حساب وجود داشته باشد، درخواست بازیابی ثبت شد.",
+  "@copy_if_the_account_exists_a_reset_request_has__b974d8e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_in_progress_ed61091": "در جریان",
+  "@copy_in_progress_ed61091": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_interview_9734f37": "مصاحبه",
+  "@copy_interview_9734f37": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_job_applications_are_managed_here_1b21e96": "درخواست‌های شغلی اینجا مدیریت می‌شوند.",
+  "@copy_job_applications_are_managed_here_1b21e96": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_job_applications_are_reviewed_by_an_admin__5098e17": "درخواست‌های شغلی ابتدا نزد ادمین بررسی می‌شوند؛ کارفرما فقط رزومه و اطلاعات حرفه‌ای نامزدهای منتخب را می‌بیند، نه اطلاعات هویتی آن‌ها.",
+  "@copy_job_applications_are_reviewed_by_an_admin__5098e17": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_job_ce2feba": "شغل",
+  "@copy_job_ce2feba": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_job_details_e815855": "جزئیات شغل",
+  "@copy_job_details_e815855": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_jobs_ebf9a80": "شغل‌ها",
+  "@copy_jobs_ebf9a80": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_keep_your_profile_opportunities_transactio_39f443d": "پروفایل، معاملات، فرصت‌های ثبت‌شده و ترجیحاتت یکجا قرار می‌گیرند.",
+  "@copy_keep_your_profile_opportunities_transactio_39f443d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_latest_activity_a05277b": "آخرین فعالیت‌ها",
+  "@copy_latest_activity_a05277b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_light_096ac39": "روشن",
+  "@copy_light_096ac39": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_limit_notifications_during_rest_b5e0db3": "اعلان‌ها را در زمان استراحت محدود کن",
+  "@copy_limit_notifications_during_rest_b5e0db3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_location_city_46ccc39": "موقعیت و شهر",
+  "@copy_location_city_46ccc39": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_location_on_dad416c": "مکان فعال",
+  "@copy_location_on_dad416c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_location_permission_was_not_enabled_you_ca_ba53b81": "دسترسی مکان فعال نشد؛ می‌توانی شهر را دستی انتخاب کنی.",
+  "@copy_location_permission_was_not_enabled_you_ca_ba53b81": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_location_personalization_is_on_you_can_cha_8dd12f4": "موقعیت مکانی روشن است؛ می‌توانی شهر را از تنظیمات عوض کنی.",
+  "@copy_location_personalization_is_on_you_can_cha_8dd12f4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_log_in_b4c960b": "ورود",
+  "@copy_log_in_b4c960b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_log_out_04a94c7": "خروج از حساب",
+  "@copy_log_out_04a94c7": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_make_it_public_or_specialized_e890215": "فرصت عمومی برای همه یا تخصصی برای یک حوزه مشخص.",
+  "@copy_make_it_public_or_specialized_e890215": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_manual_selection_90510b2": "انتخاب دستی",
+  "@copy_manual_selection_90510b2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_mark_all_read_500a31c": "همه را خواندم",
+  "@copy_mark_all_read_500a31c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_maximum_pay_b51ad57": "حداکثر مبلغ",
+  "@copy_maximum_pay_b51ad57": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_menu_1f381a4": "منو",
+  "@copy_menu_1f381a4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_message_c821412": "پیام",
+  "@copy_message_c821412": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_minimum_pay_38cc5ec": "حداقل مبلغ",
+  "@copy_minimum_pay_38cc5ec": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_mission_budget_923bb6e": "بودجه ماموریت",
+  "@copy_mission_budget_923bb6e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_mission_details_78d58d8": "جزئیات ماموریت",
+  "@copy_mission_details_78d58d8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_mission_fb4c5e1": "ماموریت",
+  "@copy_mission_fb4c5e1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_mission_jobs_fees_and_privacy_a947037": "ماموریت، شغل، مدل درآمد و حریم خصوصی",
+  "@copy_mission_jobs_fees_and_privacy_a947037": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_missions_a833d13": "ماموریت‌ها",
+  "@copy_missions_a833d13": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_monitor_and_manage_hope_in_one_place_bea3b7d": "همه‌چیز را یکجا ببین و مدیریت کن.",
+  "@copy_monitor_and_manage_hope_in_one_place_bea3b7d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_monthly_pay_d62519b": "دستمزد ماهانه",
+  "@copy_monthly_pay_d62519b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_monthly_salary_1d770dc": "دستمزد ماهانه",
+  "@copy_monthly_salary_1d770dc": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_my_job_applications_90701f0": "درخواست‌های شغلی من",
+  "@copy_my_job_applications_90701f0": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_near_1df6db0": "اطراف",
+  "@copy_near_1df6db0": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_new_opportunities_and_application_updates_d3e84aa": "پیشنهادهای تازه و وضعیت درخواست‌ها",
+  "@copy_new_opportunities_and_application_updates_d3e84aa": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_no_activity_yet_264ceb0": "هنوز فعالیتی نیست",
+  "@copy_no_activity_yet_264ceb0": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_no_applications_0917e11": "درخواستی برای بررسی نیست",
+  "@copy_no_applications_0917e11": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_no_matching_opportunity_d85e775": "فرصت مناسب پیدا نشد",
+  "@copy_no_matching_opportunity_d85e775": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_no_opportunities_a112400": "فرصتی نیست",
+  "@copy_no_opportunities_a112400": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_no_payment_1337b58": "بدون پرداخت",
+  "@copy_no_payment_1337b58": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_not_completed_f8a6746": "هنوز تکمیل نشده",
+  "@copy_not_completed_f8a6746": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_notifications_370b4a1": "اعلان‌ها",
+  "@copy_notifications_370b4a1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_offer_cc3327c": "پیشنهاد شغلی",
+  "@copy_offer_cc3327c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_offer_for_mission_ced8d4c": "پیشنهاد انجام ماموریت",
+  "@copy_offer_for_mission_ced8d4c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_offer_for_this_mission_f50b00a": "پیشنهاد انجام ماموریت",
+  "@copy_offer_for_this_mission_f50b00a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_offer_price_d8fc5f4": "قیمت پیشنهادی",
+  "@copy_offer_price_d8fc5f4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_one_time_1d496d8": "پرداخت یک‌باره",
+  "@copy_one_time_1d496d8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_open_admin_panel_39f3cb8": "ورود به پنل مدیریت",
+  "@copy_open_admin_panel_39f3cb8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_open_to_work_aa59263": "آماده همکاری",
+  "@copy_open_to_work_aa59263": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_operation_completed_66dd356": "عملیات انجام شد.",
+  "@copy_operation_completed_66dd356": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_operation_failed_eb38c4c": "عملیات انجام نشد.",
+  "@copy_operation_failed_eb38c4c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunities_015066e": "فرصت‌ها",
+  "@copy_opportunities_015066e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunities_appear_here_d85bef9": "فرصت‌ها اینجا ظاهر می‌شوند.",
+  "@copy_opportunities_appear_here_d85bef9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunities_may_already_be_nearby_585bbac": "فرصت‌ها همین اطراف هم منتظرند.",
+  "@copy_opportunities_may_already_be_nearby_585bbac": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunities_meet_the_right_people_d51fef5": "فرصت‌ها به آدم‌های درست می‌رسند.",
+  "@copy_opportunities_meet_the_right_people_d51fef5": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunities_near_9da643a": "پیشنهادهای نزدیک به",
+  "@copy_opportunities_near_9da643a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunity_62cf572": "فرصت",
+  "@copy_opportunity_62cf572": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_opportunity_published_81a9fd1": "فرصت با موفقیت منتشر شد.",
+  "@copy_opportunity_published_81a9fd1": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_part_full_time_4d952a9": "پاره‌وقت/تمام‌وقت",
+  "@copy_part_full_time_4d952a9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_part_full_time_with_monthly_pay_abd5afd": "پاره‌وقت یا تمام‌وقت و ماهانه",
+  "@copy_part_full_time_with_monthly_pay_abd5afd": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_part_time_086787b": "پاره‌وقت",
+  "@copy_part_time_086787b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_part_time_or_full_time_a007875": "پاره‌وقت یا تمام‌وقت",
+  "@copy_part_time_or_full_time_a007875": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_password_656eabe": "رمز عبور",
+  "@copy_password_656eabe": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_password_must_be_at_least_8_characters_8ad17c6": "رمز عبور باید حداقل ۸ کاراکتر باشد.",
+  "@copy_password_must_be_at_least_8_characters_8ad17c6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_pay_4121159": "مبلغ پیشنهادی",
+  "@copy_pay_4121159": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_payment_has_been_settled_f8f8f83": "وجه تسویه شده است.",
+  "@copy_payment_has_been_settled_f8f8f83": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_payment_status_e1b6f0c": "وضعیت پرداخت",
+  "@copy_payment_status_e1b6f0c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_pending_86ad26d": "در انتظار بررسی",
+  "@copy_pending_86ad26d": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_persian_62775b3": "فارسی",
+  "@copy_persian_62775b3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_personal_settings_4ecc5fa": "تنظیمات شخصی",
+  "@copy_personal_settings_4ecc5fa": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_personalized_recommendations_a4e4411": "پیشنهادهای شخصی‌سازی‌شده",
+  "@copy_personalized_recommendations_a4e4411": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_please_complete_all_fields_55c07bb": "همه فیلدها را پر کن.",
+  "@copy_please_complete_all_fields_55c07bb": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_post_a_mission_or_job_364fb6f": "ثبت ماموریت یا شغل",
+  "@copy_post_a_mission_or_job_364fb6f": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_post_a_new_opportunity_f7fe3d9": "ثبت فرصت جدید",
+  "@copy_post_a_new_opportunity_f7fe3d9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_post_opportunity_0389bce": "ثبت فرصت",
+  "@copy_post_opportunity_0389bce": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_price_time_4d31a36": "مبلغ و زمان",
+  "@copy_price_time_4d31a36": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_professional_category_a8c7c42": "حوزه تخصصی",
+  "@copy_professional_category_a8c7c42": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_professional_field_4c6b94e": "حوزه تخصصی",
+  "@copy_professional_field_4c6b94e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_professional_identity_preferences_and_acco_7f164ce": "فضای حرفه‌ای، ترجیحات و امنیت حساب",
+  "@copy_professional_identity_preferences_and_acco_7f164ce": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_professional_user_54818b8": "کاربر حرفه‌ای",
+  "@copy_professional_user_54818b8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_profile_8b081d3": "پروفایل",
+  "@copy_profile_8b081d3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_projects_progress_and_payments_at_a_glance_a0178c8": "پروژه‌ها، وضعیت و پرداخت‌ها در یک نگاه.",
+  "@copy_projects_progress_and_payments_at_a_glance_a0178c8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_public_21e97be": "عمومی",
+  "@copy_public_21e97be": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_publish_5cfd26b": "انتشار",
+  "@copy_publish_5cfd26b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_publish_opportunity_9993b91": "انتشار فرصت",
+  "@copy_publish_opportunity_9993b91": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_published_1a00f35": "منتشرشده",
+  "@copy_published_1a00f35": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_pull_down_to_try_again_c41d215": "برای تلاش دوباره صفحه را پایین بکش.",
+  "@copy_pull_down_to_try_again_c41d215": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_quiet_hours_02885b4": "ساعات سکوت",
+  "@copy_quiet_hours_02885b4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_recommended_for_you_e56d06b": "پیشنهاد متناسب با تو",
+  "@copy_recommended_for_you_e56d06b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_reference_aa63360": "مرجع",
+  "@copy_reference_aa63360": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_reject_application_9682e01": "رد درخواست",
+  "@copy_reject_application_9682e01": {
+    "description": "Accessibility label for the admin reject-application icon button."
+  },
+  "copy_remote_dcbb625": "آنلاین",
+  "@copy_remote_dcbb625": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_request_refund_c55b9aa": "درخواست بازگشت وجه",
+  "@copy_request_refund_c55b9aa": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_reset_password_18b5d1c": "بازیابی رمز عبور",
+  "@copy_reset_password_18b5d1c": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_results_2d120a3": "فرصت",
+  "@copy_results_2d120a3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_resume_summary_a1cc787": "خلاصه رزومه",
+  "@copy_resume_summary_a1cc787": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_retry_49f3eba": "تلاش دوباره",
+  "@copy_retry_49f3eba": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_review_users_opportunities_applications_an_e30b9d2": "کاربران، فرصت‌ها، درخواست‌ها و رویدادهای حساس را از یک داشبورد بررسی کن.",
+  "@copy_review_users_opportunities_applications_an_e30b9d2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_salary_schedule_bab0cb3": "دستمزد و مدل همکاری",
+  "@copy_salary_schedule_bab0cb3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_schedule_3af1939": "نوع همکاری",
+  "@copy_schedule_3af1939": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_search_dd58413": "جست‌وجو کن...",
+  "@copy_search_dd58413": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_see_missions_and_jobs_together_then_narrow_7e573a3": "ماموریت و شغل را کنار هم ببین؛ بعد دقیق‌تر فیلتر کن.",
+  "@copy_see_missions_and_jobs_together_then_narrow_7e573a3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_send_offer_8aa1351": "ارسال پیشنهاد",
+  "@copy_send_offer_8aa1351": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_send_request_0480e80": "ارسال درخواست",
+  "@copy_send_request_0480e80": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_send_your_price_and_a_short_message_to_the_3961669": "مبلغ و پیام کوتاهت را برای کارفرما بفرست.",
+  "@copy_send_your_price_and_a_short_message_to_the_3961669": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_sending_c4b5575": "در حال ارسال…",
+  "@copy_sending_c4b5575": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_set_a_defined_price_and_delivery_time_1e53f1a": "یک قیمت مشخص و مدت انجام کار تعیین کن.",
+  "@copy_set_a_defined_price_and_delivery_time_1e53f1a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_set_an_application_deadline_for_jobs_5fd80f8": "برای شغل، مهلت دریافت درخواست را مشخص کن.",
+  "@copy_set_an_application_deadline_for_jobs_5fd80f8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_settings_a8a6c67": "تنظیمات",
+  "@copy_settings_a8a6c67": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_settle_payment_82af0e6": "تسویه",
+  "@copy_settle_payment_82af0e6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_shortlist_8a78995": "فهرست کوتاه",
+  "@copy_shortlist_8a78995": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_sign_in_to_view_your_projects_and_payments_32a2bc2": "برای دیدن پروژه‌ها و پرداخت‌ها وارد حساب شو.",
+  "@copy_sign_in_to_view_your_projects_and_payments_32a2bc2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_skills_79566c4": "مهارت‌ها",
+  "@copy_skills_79566c4": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_specialized_5d1ca04": "تخصصی",
+  "@copy_specialized_5d1ca04": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_start_a_good_collaboration_9df52cf": "شروع یک همکاری خوب.",
+  "@copy_start_a_good_collaboration_9df52cf": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_start_here_555e56f": "شروع از همین‌جا",
+  "@copy_start_here_555e56f": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_start_with_your_city_or_explore_any_other__05a1e84": "کاوش را با شهر خودت شروع کن یا هر شهر دیگری را انتخاب کن.",
+  "@copy_start_with_your_city_or_explore_any_other__05a1e84": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_start_work_51d8317": "شروع کار",
+  "@copy_start_work_51d8317": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_status_b81f9c7": "وضعیت",
+  "@copy_status_b81f9c7": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_submit_201d121": "ثبت",
+  "@copy_submit_201d121": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_submit_application_43b8707": "ثبت درخواست",
+  "@copy_submit_application_43b8707": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_submit_evidence_bf38455": "ثبت مدرک",
+  "@copy_submit_evidence_bf38455": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_suspend_44bded8": "تعلیق",
+  "@copy_suspend_44bded8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_system_bf4e081": "سیستم",
+  "@copy_system_bf4e081": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_tap_to_mark_as_read_5c9917a": "برای خواندن باز کن",
+  "@copy_tap_to_mark_as_read_5c9917a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_the_first_month_salary_determines_hope_s_j_ca73bd3": "دستمزد ماه اول معیار کارمزد HOPE است.",
+  "@copy_the_first_month_salary_determines_hope_s_j_ca73bd3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_the_most_recent_project_updates_5e402d8": "جدیدترین وضعیت پروژه‌ها",
+  "@copy_the_most_recent_project_updates_5e402d8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_the_reset_request_could_not_be_submitted_475bdfd": "ثبت درخواست بازیابی انجام نشد.",
+  "@copy_the_reset_request_could_not_be_submitted_475bdfd": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_the_server_did_not_return_data_try_again_bccfbb3": "فعلاً داده‌ها از سرور دریافت نشد. دوباره امتحان کن.",
+  "@copy_the_server_did_not_return_data_try_again_bccfbb3": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_this_transaction_is_settled_04f8174": "معامله تسویه شده است.",
+  "@copy_this_transaction_is_settled_04f8174": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_title_city_or_skill_bccb024": "عنوان، شهر یا مهارت...",
+  "@copy_title_city_or_skill_bccb024": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_title_d4694a2": "عنوان",
+  "@copy_title_d4694a2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_total_projects_78ce548": "کل پروژه‌ها",
+  "@copy_total_projects_78ce548": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_transaction_7e0ea3b": "معامله",
+  "@copy_transaction_7e0ea3b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_transaction_details_d5a9152": "جزئیات معامله",
+  "@copy_transaction_details_d5a9152": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_transparent_selection_without_unnecessary__32e249a": "انتخاب شفاف، بدون نمایش بی‌دلیل اطلاعات هویتی کارجو.",
+  "@copy_transparent_selection_without_unnecessary__32e249a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_trust_privacy_9f90033": "اعتماد و حریم خصوصی",
+  "@copy_trust_privacy_9f90033": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_untitled_d89410e": "بدون عنوان",
+  "@copy_untitled_d89410e": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_use_system_setting_a8649f8": "طبق تنظیمات سیستم",
+  "@copy_use_system_setting_a8649f8": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_users_200338b": "کاربران",
+  "@copy_users_200338b": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_value_irr_ed45261": "${value} تومان",
+  "@copy_value_irr_ed45261": {
+    "description": "UI copy migrated from manual bilingual text.",
+    "placeholders": {
+      "value": {
+        "type": "Object"
+      }
+    }
+  },
+  "copy_verification_c45fea9": "احراز هویت",
+  "@copy_verification_c45fea9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_view_transaction_a91f1e6": "مشاهده وضعیت معامله",
+  "@copy_view_transaction_a91f1e6": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_what_is_hope_83013ad": "HOPE چیست؟",
+  "@copy_what_is_hope_83013ad": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_work_execution_cb0edb9": "اجرای کار",
+  "@copy_work_execution_cb0edb9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_work_profile_885ecac": "نقش و ظرفیت همکاری",
+  "@copy_work_profile_885ecac": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_work_status_eb2d6f2": "وضعیت کار",
+  "@copy_work_status_eb2d6f2": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_worker_fee_85a35aa": "کارمزد کارجو",
+  "@copy_worker_fee_85a35aa": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_worker_payout_45f6bb9": "دریافتی کارجو",
+  "@copy_worker_payout_45f6bb9": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_working_details_4ef3155": "جزئیات همکاری",
+  "@copy_working_details_4ef3155": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_you_are_covered_1bbe449": "نگران نباش",
+  "@copy_you_are_covered_1bbe449": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_you_have_no_new_notifications_45f9685": "اعلان جدیدی نداری.",
+  "@copy_you_have_no_new_notifications_45f9685": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_account_data_is_kept_securely_by_hope_b91dd1f": "با ساخت حساب، اطلاعات تو در فضای امن HOPE نگهداری می‌شود.",
+  "@copy_your_account_data_is_kept_securely_by_hope_b91dd1f": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_activity_is_private_1363766": "فضای فعالیت خصوصی است",
+  "@copy_your_activity_is_private_1363766": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_application_was_sent_for_admin_review_5d9c43a": "درخواستت ثبت شد و برای بررسی ادمین رفت.",
+  "@copy_your_application_was_sent_for_admin_review_5d9c43a": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_offer_was_submitted_75e3409": "پیشنهادت ثبت شد.",
+  "@copy_your_offer_was_submitted_75e3409": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_professional_path_2da0026": "مسیر حرفه‌ای تو",
+  "@copy_your_professional_path_2da0026": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_your_projects_applications_and_payments_wi_bec5340": "با ارسال یا قبول پیشنهاد، جریان کار تو اینجا دیده می‌شود.",
+  "@copy_your_projects_applications_and_payments_wi_bec5340": {
+    "description": "UI copy migrated from manual bilingual text."
+  },
+  "copy_hope_work_grow_together_6a1d9f0": "HOPE • کار • رشد • همراهی",
+  "@copy_hope_work_grow_together_6a1d9f0": {
+    "description": "Migrated language selector/brand copy."
+  },
+  "copy_language_english_d9f5a4a": "زبان: English",
+  "@copy_language_english_d9f5a4a": {
+    "description": "Migrated language selector/brand copy."
+  },
+  "copy_language_persian_3ffcd3e": "زبان: فارسی",
+  "@copy_language_persian_3ffcd3e": {
+    "description": "Migrated language selector/brand copy."
+  },
+  "copy_registration_failed_please_try_again_bbb72e2": "ثبت‌نام انجام نشد. دوباره تلاش کن.",
+  "@copy_registration_failed_please_try_again_bbb72e2": {
+    "description": "Final direct UI string migration."
+  },
+  "copy_link_uri_optional_1d2307a": "لینک/URI (اختیاری)",
+  "@copy_link_uri_optional_1d2307a": {
+    "description": "Final direct UI string migration."
+  },
+  "copy_description_24d1e57": "توضیحات",
+  "@copy_description_24d1e57": {
+    "description": "Final direct UI string migration."
+  },
+  "copy_about_mission_description": "HOPE یک بازار کار است که دو نیاز متفاوت را از هم جدا می‌کند: «ماموریت» برای کاری مشخص با نتیجه و مبلغ روشن، و «شغل» برای همکاری پاره‌وقت یا تمام‌وقت با دستمزد ماهانه. هدف HOPE این است که مسیر پیدا کردن و پیشنهاد دادن فرصت‌های کاری را ساده‌تر، شفاف‌تر و حرفه‌ای‌تر کند و در عین حال حریم خصوصی کارجو و سلامت فرایند انتخاب را حفظ کند.",
+  "copy_about_mission_fee_short": "۱۰٪ از کارفرما + ۱۰٪ از کارجو",
+  "copy_about_job_fee_short": "۳۰٪ از دستمزد ماه اول کارجو",
+  "copy_pick_file": "انتخاب فایل"
+}

@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const admin=fs.readFileSync(new URL('../../lib/features/admin/admin_page.dart', import.meta.url),'utf8');
+const adminRepo=fs.readFileSync(new URL('../../lib/core/admin/admin_repository.dart', import.meta.url),'utf8');
+const profile=fs.readFileSync(new URL('../../lib/features/profile/profile_page.dart', import.meta.url),'utf8');
+const profileRepo=fs.readFileSync(new URL('../../lib/core/profile/profile_repository.dart', import.meta.url),'utf8');
+const detail=fs.readFileSync(new URL('../../lib/features/marketplace/job_detail_page.dart', import.meta.url),'utf8');
+const detailRepo=fs.readFileSync(new URL('../../lib/core/marketplace/job_detail_repository.dart', import.meta.url),'utf8');
+const app=fs.readFileSync(new URL('../src/app.js', import.meta.url),'utf8');
+const jobRoutes=fs.readFileSync(new URL('../src/routes/job_routes.js', import.meta.url),'utf8');
+const jobHandlers=fs.readFileSync(new URL('../src/routes/job_handlers.js', import.meta.url),'utf8');
+const applicationRoutes=fs.readFileSync(new URL('../src/routes/application_routes.js', import.meta.url),'utf8');
+const adminRoutes=fs.readFileSync(new URL('../src/routes/admin_routes.js', import.meta.url),'utf8');
+test('admin UI exposes shortlist, forward and reject actions',()=>{for(const marker of ['shortlist','select','reject']) assert.ok(admin.includes(`'${marker}'`), marker);for(const path of ['/admin/applications/$id/shortlist','/admin/applications/$id/select','/admin/applications/$id/reject']) assert.ok(adminRepo.includes(path), path);});
+test('candidate profile exposes application history and withdrawal',()=>{assert.match(profile,/ProfileRepository/);assert.match(profileRepo,/\/applications/);assert.match(profileRepo,/\/applications\/\$applicationId\/withdraw/);});
+test('employer job detail exposes anonymized candidate lifecycle actions',()=>{assert.match(detail,/JobDetailRepository/);assert.match(detail,/_candidateAction/);assert.match(detailRepo,/\/jobs\/\$\{Uri\.encodeComponent\(jobId\)\}\/candidates/);for(const action of ['interview','offer','hire']) assert.match(detail,new RegExp(`['\"]${action}['\"]`),action);});
+test('backend recruitment routes preserve the intended staged lifecycle',()=>{for(const token of ["parts[0]==='admin'","shortlist","select","reject","parts[0] === 'applications'","interview","offer","hire","WITHDRAWN","SHORTLISTED","FORWARDED","INTERVIEW","OFFERED","ACCEPTED"]) assert.ok((adminRoutes+app+jobRoutes+jobHandlers+applicationRoutes).includes(token), token);});
