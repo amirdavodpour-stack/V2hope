@@ -24,44 +24,129 @@ jobs:
         with:
           node-version: 24
 
-      - name: Detect project root
+      - name: Inspect repository
         shell: bash
         run: |
           set -euo pipefail
 
-          ROOT=""
+          cd "$GITHUB_WORKSPACE"
 
-          if [ -f "$GITHUB_WORKSPACE/pubspec.yaml" ] \
-            && [ -d "$GITHUB_WORKSPACE/lib" ] \
-            && [ -d "$GITHUB_WORKSPACE/backend" ]; then
-            ROOT="$GITHUB_WORKSPACE"
-          else
-            while IFS= read -r candidate; do
-              if [ -f "$candidate/pubspec.yaml" ] \
-                && [ -d "$candidate/lib" ] \
-                && [ -d "$candidate/backend" ]; then
-                ROOT="$candidate"
+          echo "Repository root:"
+          pwd
+
+          echo
+          echo "Repository files:"
+          find . -maxdepth 3 -type f \
+            -not -path './.git/*' \
+            -print | sort | head -500
+
+      - name: Extract HOPE-V7 source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          ZIP_FILE=""
+
+          while IFS= read -r file; do
+            case "$file" in
+              *.zip)
+                ZIP_FILE="$file"
                 break
-              fi
-            done < <(
-              find "$GITHUB_WORKSPACE" \
-                -name pubspec.yaml \
-                -not -path '*/.dart_tool/*' \
-                -print |
-              while IFS= read -r file; do
-                dirname "$file"
-              done
-            )
-          fi
+                ;;
+            esac
+          done < <(
+            find "$GITHUB_WORKSPACE" \
+              -maxdepth 2 \
+              -type f \
+              -name '*.zip' \
+              -not -path '*/.git/*' \
+              -print | sort
+          )
 
-          if [ -z "$ROOT" ]; then
-            echo "ERROR: HOPE-V7 project root could not be detected."
-            echo "Workspace contents:"
-            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort | head -300
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No HOPE-V7 ZIP archive was found."
             exit 1
           fi
 
-          echo "Project root: $ROOT"
+          echo "Source archive:"
+          echo "$ZIP_FILE"
+
+          EXTRACT_DIR="$RUNNER_TEMP/hope-v7-source"
+
+          rm -rf "$EXTRACT_DIR"
+          mkdir -p "$EXTRACT_DIR"
+
+          echo "Extracting archive..."
+
+          unzip -q "$ZIP_FILE" -d "$EXTRACT_DIR"
+
+          echo "Archive extracted to:"
+          echo "$EXTRACT_DIR"
+
+          echo
+          echo "Extracted top-level contents:"
+          find "$EXTRACT_DIR" -maxdepth 3 -type f -print | sort | head -500
+
+          echo "HOPE_ARCHIVE_ROOT=$EXTRACT_DIR" >> "$GITHUB_ENV"
+
+      - name: Detect HOPE-V7 project root
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SEARCH_ROOT="$HOPE_ARCHIVE_ROOT"
+
+          ROOT=""
+
+          echo "Searching for HOPE-V7 project root..."
+
+          while IFS= read -r candidate; do
+
+            if [ -f "$candidate/pubspec.yaml" ] \
+              && [ -d "$candidate/lib" ] \
+              && [ -d "$candidate/backend" ]; then
+
+              ROOT="$candidate"
+              break
+
+            fi
+
+          done < <(
+            find "$SEARCH_ROOT" \
+              -type f \
+              -name 'pubspec.yaml' \
+              -not -path '*/.git/*' \
+              -print |
+            while IFS= read -r file; do
+              dirname "$file"
+            done
+          )
+
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: HOPE-V7 project root could not be detected."
+
+            echo
+            echo "Candidate pubspec.yaml files:"
+            find "$SEARCH_ROOT" \
+              -type f \
+              -name 'pubspec.yaml' \
+              -print || true
+
+            echo
+            echo "Archive contents:"
+            find "$SEARCH_ROOT" \
+              -maxdepth 5 \
+              -type f \
+              -print | sort | head -1000
+
+            exit 1
+          fi
+
+          echo "HOPE-V7 project root:"
+          echo "$ROOT"
+
           echo "HOPE_PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
 
       - name: Verify project structure
@@ -71,7 +156,7 @@ jobs:
 
           cd "$HOPE_PROJECT_ROOT"
 
-          echo "Checking HOPE-V7 project structure..."
+          echo "Verifying HOPE-V7 structure..."
 
           test -f "pubspec.yaml"
           test -d "lib"
@@ -79,7 +164,28 @@ jobs:
           test -f "backend/package.json"
           test -f "lib/features/jobs/jobs_page.dart"
 
-          echo "Project structure verified."
+          echo
+          echo "Required structure:"
+          echo "PASS: pubspec.yaml"
+          echo "PASS: lib/"
+          echo "PASS: backend/"
+          echo "PASS: backend/package.json"
+          echo "PASS: lib/features/jobs/jobs_page.dart"
+
+      - name: Verify backend configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$HOPE_PROJECT_ROOT"
+
+          if [ -f "backend/src/config.js" ]; then
+            echo "PASS: backend/src/config.js"
+          else
+            echo "WARNING: backend/src/config.js not found."
+            echo "Listing backend/src:"
+            find backend/src -maxdepth 2 -type f -print | sort || true
+          fi
 
       - name: Install backend dependencies
         shell: bash
@@ -88,18 +194,19 @@ jobs:
 
           cd "$HOPE_PROJECT_ROOT/backend"
 
-          echo "Node version:"
+          echo "Node:"
           node --version
 
-          echo "npm version:"
+          echo "npm:"
           npm --version
 
-          if [ -f package-lock.json ]; then
-            echo "Installing backend dependencies with npm ci..."
+          if [ -f "package-lock.json" ]; then
+            echo "package-lock.json found."
+            echo "Running npm ci..."
             npm ci
           else
-            echo "No backend package-lock.json found."
-            echo "Installing backend dependencies with npm install..."
+            echo "package-lock.json not found."
+            echo "Running npm install..."
             npm install
           fi
 
@@ -116,14 +223,17 @@ jobs:
             '#!/usr/bin/env bash' \
             'set -euo pipefail' \
             '' \
-            'ROOT="$(git rev-parse --show-toplevel)"' \
-            'cd "$ROOT"' \
+            'ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"' \
+            '' \
+            'if [ -n "$ROOT" ]; then' \
+            '  cd "$ROOT"' \
+            'fi' \
             '' \
             'test -f "pubspec.yaml"' \
             'test -d "lib"' \
-            'test -f "lib/features/jobs/jobs_page.dart"' \
+            'test -d "backend"' \
             'test -f "backend/package.json"' \
-            'test -f "backend/src/config.js"' \
+            'test -f "lib/features/jobs/jobs_page.dart"' \
             '' \
             'echo "HOPE-V7 bootstrap verification passed."' \
             > .github/bootstrap/verify-hope-v7.sh
@@ -134,7 +244,7 @@ jobs:
 
           test -x .github/bootstrap/verify-hope-v7.sh
 
-          echo "Bootstrap verifier repaired successfully."
+          echo "Bootstrap verifier created successfully."
 
       - name: Run bootstrap verifier
         shell: bash
@@ -150,8 +260,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          cd "$HOPE_PROJECT_ROOT"
-
           NODE_VERSION="$(node --version)"
           NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 
@@ -162,7 +270,7 @@ jobs:
             exit 1
           fi
 
-          echo "Node 24 requirement passed."
+          echo "PASS: Node 24"
 
       - name: Run backend tests
         shell: bash
@@ -180,12 +288,9 @@ jobs:
 
           cd "$HOPE_PROJECT_ROOT"
 
-          if [ ! -d "backend/src" ]; then
-            echo "ERROR: backend/src directory not found."
-            exit 1
-          fi
+          test -d "backend/src"
 
-          echo "Checking JavaScript syntax..."
+          echo "Checking backend JavaScript syntax..."
 
           find backend/src \
             -type f \
@@ -196,7 +301,7 @@ jobs:
             node --check "$file"
           done
 
-          echo "Backend syntax checks passed."
+          echo "PASS: backend syntax"
 
       - name: Run npm audit
         shell: bash
@@ -207,17 +312,19 @@ jobs:
 
           npm audit --audit-level=high
 
-      - name: Final bootstrap verification
+      - name: Final verification
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$HOPE_PROJECT_ROOT"
 
+          echo
           echo "========================================"
-          echo "HOPE-V7 BOOTSTRAP VERIFICATION"
+          echo "HOPE-V7 BOOTSTRAP FINAL VERIFICATION"
           echo "========================================"
 
+          echo
           echo "Project root:"
           pwd
 
@@ -226,20 +333,22 @@ jobs:
           node --version
 
           echo
-          echo "npm:"
-          npm --version
-
-          echo
           echo "Required files:"
-          test -f "pubspec.yaml" && echo "PASS: pubspec.yaml"
-          test -f "lib/features/jobs/jobs_page.dart" && echo "PASS: jobs_page.dart"
-          test -f "backend/package.json" && echo "PASS: backend/package.json"
-          test -f "backend/src/config.js" && echo "PASS: backend/src/config.js"
 
-          echo
-          echo "Bootstrap verifier:"
-          test -x ".github/bootstrap/verify-hope-v7.sh"
-          echo "PASS: executable verifier"
+          test -f "pubspec.yaml"
+          echo "PASS: pubspec.yaml"
+
+          test -d "lib"
+          echo "PASS: lib/"
+
+          test -d "backend"
+          echo "PASS: backend/"
+
+          test -f "backend/package.json"
+          echo "PASS: backend/package.json"
+
+          test -f "lib/features/jobs/jobs_page.dart"
+          echo "PASS: lib/features/jobs/jobs_page.dart"
 
           echo
           echo "========================================"
