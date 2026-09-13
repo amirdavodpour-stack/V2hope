@@ -20,27 +20,88 @@ jobs:
       - name: Prepare
         run: |
           set -e
+
           mkdir -p /tmp/hope
-          unzip -o "HOPE-V7-4.0.20-SESSION-20260913T141130Z-final.zip" -d /tmp/hope
+
+          unzip -o \
+            "HOPE-V7-4.0.20-SESSION-20260913T141130Z-final.zip" \
+            -d /tmp/hope
 
       - name: Find project root
         run: |
           set -e
 
-          ROOT="$(find /tmp/hope -name package.json -o -name pubspec.yaml | head -n 1)"
+          echo "Searching for the full HOPE-V7 project root..."
+
+          ROOT="$(
+            find /tmp/hope -type f -name pubspec.yaml -print \
+            | while read -r pubspec; do
+                d="$(dirname "$pubspec")"
+
+                if [ -d "$d/lib" ] &&
+                   [ -d "$d/backend" ] &&
+                   [ -d "$d/src" ]; then
+                  echo "$d"
+                  break
+                fi
+              done
+          )"
 
           if [ -z "$ROOT" ]; then
-            echo "Project root not found"
+            echo "ERROR: Full HOPE-V7 project root not found."
+            echo ""
+            echo "Available project markers:"
+            find /tmp/hope -maxdepth 6 -type f \
+              \( \
+                -name pubspec.yaml \
+                -o -name package.json \
+              \) \
+              -print \
+              | sort
+
             exit 1
           fi
 
-          ROOT="$(dirname "$ROOT")"
+          echo "========================================"
+          echo "HOPE-V7 PROJECT ROOT FOUND"
+          echo "========================================"
+          echo "$ROOT"
+          echo ""
+
           echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
-          echo "Project root: $ROOT"
+
+      - name: Validate project root
+        run: |
+          set -e
+
+          echo "Validating project structure..."
+
+          test -f "$PROJECT_ROOT/pubspec.yaml"
+          test -d "$PROJECT_ROOT/lib"
+          test -d "$PROJECT_ROOT/backend"
+          test -d "$PROJECT_ROOT/src"
+          test -f "$PROJECT_ROOT/backend/package.json"
+
+          echo "Required project structure is present."
+
+          echo ""
+          echo "Root files:"
+          find "$PROJECT_ROOT" -maxdepth 1 -type f \
+            -printf '%f\n' \
+            | sort
+
+          echo ""
+          echo "Required directories:"
+          printf '%s\n' \
+            "lib" \
+            "backend" \
+            "src"
 
       - name: Copy project
         run: |
           set -e
+
+          echo "Copying COMPLETE HOPE-V7 project..."
 
           rsync -a \
             "$PROJECT_ROOT/" \
@@ -48,13 +109,48 @@ jobs:
             --exclude ".git/" \
             --exclude ".github/workflows/bootstrap.yml"
 
+          echo "Project copied successfully."
+
+      - name: Verify copied project
+        run: |
+          set -e
+
+          echo "Verifying repository after copy..."
+
+          test -f "pubspec.yaml"
+          test -d "lib"
+          test -d "backend"
+          test -d "src"
+
+          test -f "lib/features/jobs/jobs_page.dart"
+          test -f "backend/package.json"
+          test -f "src/config.js"
+
+          echo ""
+          echo "========================================"
+          echo "PROJECT COPY VERIFICATION PASSED"
+          echo "========================================"
+
+          echo ""
+          echo "Key files verified:"
+          echo "  pubspec.yaml"
+          echo "  lib/features/jobs/jobs_page.dart"
+          echo "  backend/package.json"
+          echo "  src/config.js"
+
       - name: Install backend dependencies
         run: |
           set -e
 
-          if [ -f backend/package.json ]; then
+          if [ -f backend/package-lock.json ]; then
             cd backend
             npm ci --ignore-scripts
+          elif [ -f backend/package.json ]; then
+            cd backend
+            npm install --ignore-scripts
+          else
+            echo "backend/package.json not found"
+            exit 1
           fi
 
       - name: Validate Node scripts
@@ -62,12 +158,24 @@ jobs:
           set -e
 
           if [ -f tools/staging-operational-gate.mjs ]; then
+            echo "Checking tools/staging-operational-gate.mjs"
             node --check tools/staging-operational-gate.mjs
           fi
+
+          if [ -f src/config.js ]; then
+            echo "Checking src/config.js"
+            node --check src/config.js
+          fi
+
+          echo "Node syntax validation passed."
 
       - name: Run project bootstrap/check scripts
         run: |
           set -e
+
+          echo "========================================"
+          echo "ROOT PROJECT CHECKS"
+          echo "========================================"
 
           if [ -f package.json ]; then
             npm run bootstrap --if-present
@@ -76,13 +184,30 @@ jobs:
             npm test --if-present
           fi
 
+          echo ""
+          echo "========================================"
+          echo "BACKEND CHECKS"
+          echo "========================================"
+
           if [ -f backend/package.json ]; then
             cd backend
+
             npm run bootstrap --if-present
             npm run setup --if-present
             npm run verify --if-present
             npm test --if-present
           fi
+
+      - name: Check repository state
+        run: |
+          set -e
+
+          echo "Repository status:"
+          git status --short
+
+          echo ""
+          echo "Changed files:"
+          git diff --stat
 
       - name: Commit project
         run: |
@@ -96,6 +221,30 @@ jobs:
           if git diff --cached --quiet; then
             echo "Nothing to commit."
           else
-            git commit -m "chore: bootstrap HOPE-V7 from session archive"
+            git commit \
+              -m "chore: bootstrap complete HOPE-V7 project from session archive"
+
             git push origin HEAD:main
           fi
+
+      - name: Final verification
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "FINAL HOPE-V7 BOOTSTRAP VERIFICATION"
+          echo "========================================"
+
+          test -f pubspec.yaml
+          test -f lib/features/jobs/jobs_page.dart
+          test -f backend/package.json
+          test -f src/config.js
+
+          echo ""
+          echo "HOPE-V7 bootstrap completed successfully."
+          echo "Full project root was detected correctly."
+          echo "Flutter project files are present."
+          echo "Backend files are present."
+          echo "Source/config files are present."
+          echo ""
+          echo "STATUS: PASS"
