@@ -96,8 +96,10 @@ jobs:
           set -Eeuo pipefail
 
           find tools -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
-          test -x android/gradlew
+
+          test -e android/gradlew
           chmod +x android/gradlew
+          test -x android/gradlew
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -195,11 +197,25 @@ jobs:
 
           npm run sbom
 
-          test -s artifacts/sbom.json || {
+          test -s sbom.json || {
             echo "SBOM was not generated or is empty." >&2
-            find artifacts -maxdepth 2 -type f -print >&2 || true
+            find . -maxdepth 3 -type f \
+              \( -name '*sbom*' -o -name '*SBOM*' \) \
+              -print >&2 || true
             exit 1
           }
+
+          mkdir -p artifacts
+          cp sbom.json artifacts/sbom.json
+
+          test -s artifacts/sbom.json
+
+          echo "SBOM verified: $(wc -c < artifacts/sbom.json) bytes"
+
+          if grep -q '"bom-ref"' artifacts/sbom.json; then
+            echo "SBOM component references:"
+            grep -o '"bom-ref"' artifacts/sbom.json | wc -l
+          fi
 
       - name: Flutter dependencies
         shell: bash
@@ -298,10 +314,17 @@ jobs:
           echo "Android debug build environment"
           echo "========================================"
 
+          echo "--- Java ---"
           java -version
           javac -version
+
+          echo "--- Flutter ---"
           flutter --version
+
+          echo "--- ADB ---"
           adb version
+
+          echo "--- Android build tools ---"
 
           if command -v aapt2 >/dev/null 2>&1; then
             aapt2 version || true
@@ -311,6 +334,7 @@ jobs:
             apksigner --version || true
           fi
 
+          echo "--- Environment ---"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT"
           echo "BUILD_PROFILE=$BUILD_PROFILE"
           echo "API_BASE_URL=$API_BASE_URL"
@@ -318,6 +342,11 @@ jobs:
           echo "GRADLE_OPTS=${GRADLE_OPTS:-}"
 
           BUILD_LOG="artifacts/android-debug-build.log"
+
+          echo
+          echo "========================================"
+          echo "Starting Android debug build"
+          echo "========================================"
 
           set +e
           bash tools/build_apk_debug.sh 2>&1 | tee "$BUILD_LOG"
@@ -328,6 +357,7 @@ jobs:
             echo
             echo "========================================"
             echo "ANDROID DEBUG BUILD FAILED"
+            echo "exit_code=$BUILD_STATUS"
             echo "========================================"
 
             echo
@@ -342,7 +372,7 @@ jobs:
             tail -n 500 "$BUILD_LOG"
 
             echo
-            echo "--- Gradle daemon / project diagnostics ---"
+            echo "--- Gradle version ---"
 
             if [ -d android ]; then
               (
@@ -353,16 +383,28 @@ jobs:
 
             echo
             echo "--- Generated APK directory ---"
+
             find build/app/outputs/flutter-apk \
               -maxdepth 2 \
               -type f \
               -printf '%p %s bytes\n' 2>/dev/null || true
+
+            echo
+            echo "--- Android build directories ---"
+
+            find android \
+              -maxdepth 3 \
+              -type f \
+              \( -name '*.log' -o -name '*.txt' \) \
+              -print 2>/dev/null | head -100 || true
 
             exit "$BUILD_STATUS"
           fi
 
           test -s "$BUILD_LOG"
 
+          echo
+          echo "ANDROID_DEBUG_BUILD_PASS"
           echo "ANDROID_DEBUG_BUILD_LOG=$BUILD_LOG"
 
       - name: Collect bootstrap evidence
@@ -379,6 +421,9 @@ jobs:
             echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
             echo "workflow=${GITHUB_WORKFLOW}"
             echo "ref=${GITHUB_REF}"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
             echo "node=$(node --version 2>/dev/null || true)"
             echo "java=$(java -version 2>&1 | head -1 || true)"
             echo "flutter=$(flutter --version 2>/dev/null | head -1 || true)"
@@ -393,11 +438,24 @@ jobs:
             cp pubspec.lock artifacts/pubspec.lock
           fi
 
+          if [ -f backend/sbom.json ]; then
+            cp backend/sbom.json artifacts/sbom.json
+          fi
+
+          if [ -f backend/artifacts/sbom.json ]; then
+            cp backend/artifacts/sbom.json artifacts/sbom.json
+          fi
+
           if [ -d backend/artifacts ]; then
             cp -a backend/artifacts/. artifacts/ 2>/dev/null || true
           fi
 
-          find artifacts -maxdepth 2 -type f -print | sort
+          echo
+          echo "========================================"
+          echo "BOOTSTRAP EVIDENCE"
+          echo "========================================"
+
+          find artifacts -maxdepth 3 -type f -print | sort
 
       - name: Upload bootstrap evidence
         if: always()
