@@ -23,10 +23,6 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
 
       - name: Detect project root
         shell: bash
@@ -35,32 +31,34 @@ jobs:
 
           ROOT=""
 
-          while IFS= read -r candidate; do
-            if [ -f "$candidate/pubspec.yaml" ] \
-              && [ -d "$candidate/lib" ] \
-              && [ -d "$candidate/backend" ] \
-              && [ -d "$candidate/src" ] 2>/dev/null; then
-              ROOT="$candidate"
-              break
-            fi
-          done < <(
-            find "$GITHUB_WORKSPACE" \
-              -name pubspec.yaml \
-              -not -path '*/.dart_tool/*' \
-              -print | while read -r file; do
+          if [ -f "$GITHUB_WORKSPACE/pubspec.yaml" ] \
+            && [ -d "$GITHUB_WORKSPACE/lib" ] \
+            && [ -d "$GITHUB_WORKSPACE/backend" ]; then
+            ROOT="$GITHUB_WORKSPACE"
+          else
+            while IFS= read -r candidate; do
+              if [ -f "$candidate/pubspec.yaml" ] \
+                && [ -d "$candidate/lib" ] \
+                && [ -d "$candidate/backend" ]; then
+                ROOT="$candidate"
+                break
+              fi
+            done < <(
+              find "$GITHUB_WORKSPACE" \
+                -name pubspec.yaml \
+                -not -path '*/.dart_tool/*' \
+                -print |
+              while IFS= read -r file; do
                 dirname "$file"
               done
-          )
+            )
+          fi
 
           if [ -z "$ROOT" ]; then
-            if [ -f "$GITHUB_WORKSPACE/pubspec.yaml" ] \
-              && [ -d "$GITHUB_WORKSPACE/lib" ] \
-              && [ -d "$GITHUB_WORKSPACE/backend" ]; then
-              ROOT="$GITHUB_WORKSPACE"
-            else
-              echo "ERROR: HOPE-V7 project root could not be detected."
-              exit 1
-            fi
+            echo "ERROR: HOPE-V7 project root could not be detected."
+            echo "Workspace contents:"
+            find "$GITHUB_WORKSPACE" -maxdepth 3 -type f | sort | head -300
+            exit 1
           fi
 
           echo "Project root: $ROOT"
@@ -72,6 +70,8 @@ jobs:
           set -euo pipefail
 
           cd "$HOPE_PROJECT_ROOT"
+
+          echo "Checking HOPE-V7 project structure..."
 
           test -f "pubspec.yaml"
           test -d "lib"
@@ -88,15 +88,26 @@ jobs:
 
           cd "$HOPE_PROJECT_ROOT/backend"
 
+          echo "Node version:"
+          node --version
+
+          echo "npm version:"
+          npm --version
+
           if [ -f package-lock.json ]; then
+            echo "Installing backend dependencies with npm ci..."
             npm ci
           else
+            echo "No backend package-lock.json found."
+            echo "Installing backend dependencies with npm install..."
             npm install
           fi
 
       - name: Repair bootstrap verifier
         shell: bash
         run: |
+          set -euo pipefail
+
           mkdir -p "$HOPE_PROJECT_ROOT/.github/bootstrap"
 
           cd "$HOPE_PROJECT_ROOT"
@@ -134,19 +145,24 @@ jobs:
 
           bash .github/bootstrap/verify-hope-v7.sh
 
-      - name: Verify Node version
+      - name: Verify Node 24
         shell: bash
         run: |
           set -euo pipefail
 
-          node --version
+          cd "$HOPE_PROJECT_ROOT"
 
+          NODE_VERSION="$(node --version)"
           NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+
+          echo "Node version: $NODE_VERSION"
 
           if [ "$NODE_MAJOR" -lt 24 ]; then
             echo "ERROR: Node 24+ is required."
             exit 1
           fi
+
+          echo "Node 24 requirement passed."
 
       - name: Run backend tests
         shell: bash
@@ -157,20 +173,30 @@ jobs:
 
           npm test
 
-      - name: Run syntax checks
+      - name: Run backend syntax checks
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$HOPE_PROJECT_ROOT"
 
+          if [ ! -d "backend/src" ]; then
+            echo "ERROR: backend/src directory not found."
+            exit 1
+          fi
+
+          echo "Checking JavaScript syntax..."
+
           find backend/src \
             -type f \
             -name '*.js' \
             -print0 |
           while IFS= read -r -d '' file; do
+            echo "Checking: $file"
             node --check "$file"
           done
+
+          echo "Backend syntax checks passed."
 
       - name: Run npm audit
         shell: bash
@@ -181,13 +207,41 @@ jobs:
 
           npm audit --audit-level=high
 
-      - name: Bootstrap summary
+      - name: Final bootstrap verification
         shell: bash
         run: |
+          set -euo pipefail
+
+          cd "$HOPE_PROJECT_ROOT"
+
+          echo "========================================"
+          echo "HOPE-V7 BOOTSTRAP VERIFICATION"
+          echo "========================================"
+
+          echo "Project root:"
+          pwd
+
+          echo
+          echo "Node:"
+          node --version
+
+          echo
+          echo "npm:"
+          npm --version
+
+          echo
+          echo "Required files:"
+          test -f "pubspec.yaml" && echo "PASS: pubspec.yaml"
+          test -f "lib/features/jobs/jobs_page.dart" && echo "PASS: jobs_page.dart"
+          test -f "backend/package.json" && echo "PASS: backend/package.json"
+          test -f "backend/src/config.js" && echo "PASS: backend/src/config.js"
+
+          echo
+          echo "Bootstrap verifier:"
+          test -x ".github/bootstrap/verify-hope-v7.sh"
+          echo "PASS: executable verifier"
+
+          echo
           echo "========================================"
           echo "HOPE-V7 BOOTSTRAP COMPLETE"
-          echo "========================================"
-          echo "Project root: $HOPE_PROJECT_ROOT"
-          echo "Node: $(node --version)"
-          echo "Bootstrap verifier: PASS"
           echo "========================================"
