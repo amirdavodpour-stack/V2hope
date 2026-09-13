@@ -59,12 +59,14 @@ jobs:
 
           echo "Using archive: $(basename "$ZIP")"
 
+          # Reject path traversal and repository metadata only.
+          # .github is allowed in an archive, but is NEVER imported.
           while IFS= read -r entry; do
             entry="${entry//\\//}"
 
             case "$entry" in
-              /*|../*|*/../*|*/..|.git|.git/*|*/.git/*|.github|.github/*|*/.github/*)
-                echo "Unsafe or controller-owned ZIP path: $entry" >&2
+              /*|../*|*/../*|*/..|.git|.git/*|*/.git/*)
+                echo "Unsafe ZIP path: $entry" >&2
                 exit 1
                 ;;
             esac
@@ -106,10 +108,10 @@ jobs:
             exit 1
           }
 
-          echo "Project root inside archive: ${SRC#$EXTRACT/}"
+          echo "Project root: ${SRC#$EXTRACT/}"
 
-          # Bootstrap ownership is exclusively in GitHub.
-          # The project archive is never allowed to carry its own controller.
+          # Remove previously imported project payload only.
+          # The GitHub controller itself remains untouched.
           rm -rf \
             "$ROOT/backend" \
             "$ROOT/lib" \
@@ -119,15 +121,29 @@ jobs:
             "$ROOT/assets" \
             "$ROOT/test" \
             "$ROOT/integration_test" \
-            "$ROOT/tools" \
             "$ROOT/docs"
 
-          cp -a "$SRC/." "$ROOT/"
+          # Import project contents while explicitly excluding .github.
+          # This makes GitHub the single source of truth for workflows.
+          for item in \
+            "$SRC"/* \
+            "$SRC"/.[!.]* \
+            "$SRC"/..?*
+          do
+            [ -e "$item" ] || continue
 
-          # Never allow an imported archive to replace the GitHub controller.
-          rm -rf "$ROOT/.github"
+            base="${item##*/}"
 
-          echo 'PASS: project archive imported; GitHub remains the single bootstrap owner.'
+            case "$base" in
+              .github|.git)
+                continue
+                ;;
+            esac
+
+            cp -a "$item" "$ROOT/"
+          done
+
+          echo 'PASS: project imported; GitHub controller preserved.'
 
       - name: Setup Node 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -172,20 +188,27 @@ jobs:
             }
           done
 
-          if find .github tools -maxdepth 2 -type f \
+          # There must be exactly one Bootstrap controller:
+          # the one already committed under .github/workflows.
+          test -f .github/workflows/bootstrap.yml || {
+            echo 'Missing GitHub Bootstrap controller.' >&2
+            exit 1
+          }
+
+          if find tools backend lib test integration_test \
+            -type f \
             \( \
-              -name 'bootstrap.yml' \
-              -o -name '*bootstrap-v8*.sh' \
+              -name 'bootstrap-v8.sh' \
               -o -name 'bootstrap-dependencies.sh' \
             \) \
             -print | grep -q .; then
-            echo 'Bootstrap duplication detected inside imported project.' >&2
+            echo 'Duplicate internal Bootstrap detected.' >&2
             exit 1
           fi
 
           python3 tools/check-workflows.py
 
-          echo 'PASS: structure and workflow contracts'
+          echo 'PASS: repository structure and workflow contracts'
 
       - name: Backend dependency install and core syntax
         working-directory: backend
@@ -211,7 +234,7 @@ jobs:
             grep -RInE \
               --include='*.js' \
               'db\.(collection|insert|update|touch|reset|save)' \
-              ../backend/src/routes \
+              routes \
               2>/dev/null |
             wc -l |
             tr -d ' '
@@ -277,7 +300,7 @@ jobs:
 
       - name: Upload bootstrap report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v4
         with:
           name: hope-v8-bootstrap-report
           path: |
