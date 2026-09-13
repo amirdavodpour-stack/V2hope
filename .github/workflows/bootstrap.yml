@@ -60,7 +60,7 @@ jobs:
           echo "Using archive: $(basename "$ZIP")"
 
           # Reject path traversal and repository metadata.
-          # .github is allowed in an archive, but is NEVER imported.
+          # .github is allowed inside an archive but is NEVER imported.
           while IFS= read -r entry; do
             entry="${entry//\\//}"
 
@@ -195,14 +195,21 @@ jobs:
             exit 1
           }
 
-          if find tools backend lib test integration_test \
-            -type f \
-            \( \
-              -name 'bootstrap-v8.sh' \
-              -o -name 'bootstrap-dependencies.sh' \
-            \) \
-            -print | grep -q .; then
-            echo 'Duplicate internal Bootstrap detected.' >&2
+          # Internal Bootstrap controllers are forbidden.
+          # Missing directories are harmless.
+          duplicate_bootstrap="$(
+            find tools backend lib test integration_test \
+              -type f \
+              \( \
+                -name 'bootstrap-v8.sh' \
+                -o -name 'bootstrap-dependencies.sh' \
+              \) \
+              -print 2>/dev/null || true
+          )"
+
+          if [ -n "$duplicate_bootstrap" ]; then
+            echo 'Duplicate internal Bootstrap detected:' >&2
+            printf '%s\n' "$duplicate_bootstrap" >&2
             exit 1
           fi
 
@@ -230,11 +237,18 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          ROUTES_DIR="src/routes"
+
+          test -d "$ROUTES_DIR" || {
+            echo "Missing routes directory: $ROUTES_DIR" >&2
+            exit 1
+          }
+
           refs="$(
             grep -RInE \
               --include='*.js' \
               'db\.(collection|insert|update|touch|reset|save)' \
-              routes \
+              "$ROUTES_DIR" \
               2>/dev/null |
             wc -l |
             tr -d ' '
@@ -275,7 +289,10 @@ jobs:
       - name: Dependency audit
         working-directory: backend
         shell: bash
-        run: npm audit --audit-level=high
+        run: |
+          set -Eeuo pipefail
+
+          npm audit --audit-level=high
 
       - name: Flutter validation
         shell: bash
