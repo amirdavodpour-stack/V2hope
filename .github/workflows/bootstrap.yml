@@ -1,10 +1,10 @@
-name: HOPE ZIP Release/Staging Bootstrap
+name: HOPE ZIP Release/Staging Bootstrap v2
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "Extract the final HOPE ZIP, commit it, then run staging or full release"
+        description: "Import the final ZIP and run staging or release"
         required: true
         type: choice
         options:
@@ -31,13 +31,14 @@ jobs:
       ZIP_FILE: HOPE-V8-RELEASE-STAGING-FINAL.zip
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
+
     steps:
-      - name: Checkout current repository
+      - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
-      - name: Import final HOPE project from ZIP
+      - name: Import final HOPE project without replacing bootstrap
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -52,43 +53,90 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d "$TMP"
 
-          test -f "$TMP/.github/workflows/staging-certification.yml" || {
-            echo "ERROR: final ZIP does not contain staging-certification.yml." >&2
-            exit 1
-          }
-          test -f "$TMP/.github/workflows/production-release.yml" || {
-            echo "ERROR: final ZIP does not contain production-release.yml." >&2
-            exit 1
-          }
           test -f "$TMP/pubspec.yaml" || {
             echo "ERROR: final ZIP does not contain pubspec.yaml." >&2
             exit 1
           }
+          test -d "$TMP/.github/workflows" || {
+            echo "ERROR: final ZIP does not contain .github/workflows." >&2
+            exit 1
+          }
 
-          # Replace repository contents with the final project while keeping
-          # the uploaded ZIP available for audit/recovery.
-          find . -mindepth 1 -maxdepth 1 \
-            ! -name '.git' \
-            ! -name "$ZIP_FILE" \
-            -exec rm -rf -- {} +
+          # Import everything except .git and .github/workflows.
+          # The currently installed bootstrap.yml and existing workflow files
+          # are intentionally preserved. This avoids requiring the GITHUB_TOKEN
+          # to create/update workflow files.
+          while IFS= read -r -d '' item; do
+            rel="${item#"$TMP"/}"
+            case "$rel" in
+              .github/workflows|.github/workflows/*)
+                continue
+                ;;
+            esac
 
-          cp -a "$TMP/." .
+            target="./$rel"
+            rm -rf -- "$target"
+            mkdir -p "$(dirname "$target")"
+            cp -a "$item" "$target"
+          done < <(find "$TMP" -mindepth 1 -maxdepth 1 -print0)
 
-          # Preserve the executable permissions required by the Android/CI toolchain.
+          # Import the final workflow set only as audit artifacts outside
+          # .github/workflows. They are NOT activated by this run.
+          rm -rf .ci-final-workflows
+          mkdir -p .ci-final-workflows
+          cp -a "$TMP/.github/workflows/." .ci-final-workflows/
+
+          # Required executable permissions.
           chmod +x android/gradlew
           find tools -type f -name '*.sh' -exec chmod +x {} +
 
-          echo "Imported final project:"
+          echo "Final project imported."
+          echo "Existing .github/workflows files preserved."
           git status --short
 
-      - name: Validate imported workflows before commit
+      - name: Validate imported project
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          test -f pubspec.yaml
+          test -f android/gradlew
+          test -x android/gradlew
+
           python3 tools/check-workflows.py
 
-      - name: Commit imported final project
-        id: commit
+      - name: Validate final workflow payload separately
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          root = Path(".ci-final-workflows")
+          required = {
+              "bootstrap.yml",
+              "staging-certification.yml",
+              "production-release.yml",
+          }
+
+          names = {p.name for p in root.glob("*.yml")} | {p.name for p in root.glob("*.yaml")}
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(f"Missing final workflow files: {', '.join(missing)}")
+
+          for path in sorted(root.iterdir()):
+              if path.suffix not in {".yml", ".yaml"}:
+                  continue
+              with path.open(encoding="utf-8") as fh:
+                  yaml.safe_load(fh)
+              print(f"YAML OK: {path}")
+
+          print("Final workflow payload is syntactically valid.")
+          PY
+
+      - name: Commit imported project
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -97,13 +145,29 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
+
           if git diff --cached --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No repository changes were needed."
+            echo "No repository changes needed."
           else
-            git commit -m "Bootstrap final HOPE release/staging project"
+            git commit -m "Import final HOPE release staging project"
             git push origin "HEAD:${GITHUB_REF_NAME}"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check bootstrap workflow remained untouched
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          git diff HEAD^ HEAD -- .github/workflows/bootstrap.yml || true
+
+          # The import step deliberately never writes this file.
+          # If it changed for another reason, fail rather than silently
+          # replacing the active bootstrap workflow.
+          if git diff --quiet HEAD^ HEAD -- .github/workflows/bootstrap.yml; then
+            echo "BOOTSTRAP_PRESERVED_PASS"
+          else
+            echo "ERROR: active .github/workflows/bootstrap.yml changed." >&2
+            exit 1
           fi
 
       - name: Dispatch staging certification
@@ -113,11 +177,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+
           gh workflow run staging-certification.yml \
             --ref "${GITHUB_REF_NAME}"
 
-          echo "STAGING workflow dispatched on ${GITHUB_REF_NAME}."
-          echo "The staging workflow is now running from the imported final project."
+          echo "STAGING_DISPATCHED_PASS"
 
       - name: Dispatch full production release
         if: ${{ env.MODE == 'release' }}
@@ -136,5 +200,4 @@ jobs:
             --ref "${GITHUB_REF_NAME}" \
             -f confirm=release
 
-          echo "PRODUCTION release workflow dispatched on ${GITHUB_REF_NAME}."
-          echo "Production release will run its staging certification gate first."
+          echo "RELEASE_DISPATCHED_PASS"
