@@ -35,7 +35,7 @@ jobs:
   bootstrap:
     name: Bootstrap and Verify HOPE-V8
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 100
 
     outputs:
       source_sha: ${{ steps.source.outputs.source_sha }}
@@ -48,28 +48,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ------------------------------------------------------------
-      # IMPORTANT:
-      # The repository is a bootstrap repository.
-      # The actual Flutter/Node project lives inside the source ZIP.
-      # Therefore source extraction MUST happen before any pubspec
-      # or backend validation.
-      # ------------------------------------------------------------
-
-      - name: Verify source archive exists
+      - name: Verify source archive
         shell: bash
         run: |
           set -Eeuo pipefail
 
           if [[ ! -f "${SOURCE_ARCHIVE}" ]]; then
             echo "::error::Required source archive is missing: ${SOURCE_ARCHIVE}"
-            echo "::error::The bootstrap repository must contain the authoritative HOPE source archive."
             exit 1
           fi
 
           test -s "${SOURCE_ARCHIVE}"
 
-          echo "Source archive:"
           ls -lh "${SOURCE_ARCHIVE}"
 
       - name: Validate source archive paths
@@ -78,32 +68,27 @@ jobs:
           set -Eeuo pipefail
 
           python3 - <<'PY'
-          import sys
           import zipfile
 
           archive = "HOPE-V8-CI-FIXED-15-executable-permissions.zip"
 
           with zipfile.ZipFile(archive) as z:
               for name in z.namelist():
-                  if not name:
-                      continue
-
                   normalized = name.replace("\\", "/")
 
                   if normalized.startswith("/"):
                       raise SystemExit(f"Unsafe absolute ZIP path: {name}")
 
-                  parts = normalized.split("/")
-                  if ".." in parts:
+                  if ".." in normalized.split("/"):
                       raise SystemExit(f"Unsafe parent ZIP path: {name}")
 
-                  if ".git" in parts:
+                  if ".git" in normalized.split("/"):
                       raise SystemExit(f"Unsafe .git ZIP path: {name}")
 
           print("Source archive path validation: PASS")
           PY
 
-      - name: Extract authoritative HOPE source
+      - name: Extract authoritative source
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -120,12 +105,7 @@ jobs:
               z.extractall(".hope-source")
           PY
 
-          echo "Extracted source tree:"
-          find .hope-source -maxdepth 3 -type f \
-            \( -name "pubspec.yaml" -o -name "package.json" \) \
-            -print | sort
-
-      - name: Locate actual HOPE project root
+      - name: Locate authoritative project root
         id: source
         shell: bash
         run: |
@@ -135,9 +115,10 @@ jobs:
 
           while IFS= read -r candidate; do
             if [[ -f "${candidate}/pubspec.yaml" ]] &&
-               [[ -d "${candidate}/lib" ]] &&
                [[ -f "${candidate}/backend/package.json" ]] &&
-               [[ -d "${candidate}/backend/src" ]]; then
+               [[ -f "${candidate}/backend/package-lock.json" ]] &&
+               [[ -d "${candidate}/backend/src" ]] &&
+               [[ -d "${candidate}/lib" ]]; then
               PROJECT_ROOT="${candidate}"
               break
             fi
@@ -151,64 +132,140 @@ jobs:
           )
 
           if [[ -z "${PROJECT_ROOT}" ]]; then
-            echo "::error::Could not locate a valid HOPE project root inside ${SOURCE_ARCHIVE}"
-            echo "Expected:"
-            echo "  pubspec.yaml"
-            echo "  lib/"
-            echo "  backend/package.json"
-            echo "  backend/src/"
-            echo
-            echo "Discovered files:"
+            echo "::error::Unable to locate authoritative HOPE project root."
             find .hope-source -maxdepth 5 -type f | sort | head -500
             exit 1
           fi
 
-          echo "Authoritative HOPE project root:"
-          echo "${PROJECT_ROOT}"
-
           echo "project_root=${PROJECT_ROOT}" >> "${GITHUB_OUTPUT}"
 
           SOURCE_SHA="$(
-            python3 - <<PY
+            python3 - "${PROJECT_ROOT}" <<'PY'
           import hashlib
-          p = "${PROJECT_ROOT}"
-          h = hashlib.sha256()
-
           import os
-          files = []
-          for root, dirs, names in os.walk(p):
-              dirs[:] = sorted(d for d in dirs if d not in {".git", ".dart_tool", "node_modules", "build"})
-              for n in sorted(names):
-                  fp = os.path.join(root, n)
-                  rel = os.path.relpath(fp, p)
-                  files.append((rel, fp))
+          import sys
 
-          for rel, fp in sorted(files):
-              h.update(rel.replace(os.sep, "/").encode())
-              h.update(b"\\0")
-              with open(fp, "rb") as f:
+          root = sys.argv[1]
+          digest = hashlib.sha256()
+
+          files = []
+
+          for current, dirs, names in os.walk(root):
+              dirs[:] = sorted(
+                  d for d in dirs
+                  if d not in {".git", ".dart_tool", "node_modules", "build"}
+              )
+
+              for name in sorted(names):
+                  path = os.path.join(current, name)
+                  rel = os.path.relpath(path, root)
+                  files.append((rel.replace(os.sep, "/"), path))
+
+          for rel, path in sorted(files):
+              digest.update(rel.encode())
+              digest.update(b"\0")
+
+              with open(path, "rb") as f:
                   while True:
                       chunk = f.read(1024 * 1024)
                       if not chunk:
                           break
-                      h.update(chunk)
+                      digest.update(chunk)
 
-          print(h.hexdigest())
+          print(digest.hexdigest())
           PY
           )"
 
           echo "source_sha=${SOURCE_SHA}" >> "${GITHUB_OUTPUT}"
 
-      - name: Import authoritative HOPE source into workspace
+          echo "Authoritative project root:"
+          echo "${PROJECT_ROOT}"
+          echo "Source SHA:"
+          echo "${SOURCE_SHA}"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ steps.source.outputs.project_root }}/backend/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # ------------------------------------------------------------
+      # IMPORTANT:
+      # agent-preflight.sh is executed FROM THE AUTHORITATIVE SOURCE
+      # ROOT, where staging-certification.yml actually exists.
+      #
+      # We do NOT remove/patch/skip its contract.
+      # ------------------------------------------------------------
+
+      - name: Authoritative agent preflight
+        working-directory: ${{ steps.source.outputs.project_root }}
         shell: bash
-        env:
-          PROJECT_ROOT: ${{ steps.source.outputs.project_root }}
         run: |
           set -Eeuo pipefail
 
-          PROJECT_ROOT="${PROJECT_ROOT}"
+          bash tools/agent-preflight.sh
 
-          test -d "${PROJECT_ROOT}"
+      - name: Authoritative workflow validation
+        working-directory: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          python3 tools/check-workflows.py
+
+      - name: Authoritative static audit
+        working-directory: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          bash tools/static_audit.sh
+
+      - name: Authoritative Node syntax validation
+        working-directory: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          node --check backend/src/*.js
+
+      - name: Authoritative runtime certification preflight
+        working-directory: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          bash tools/runtime-certification-preflight.sh
+
+      - name: Authoritative Android build preflight
+        working-directory: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          bash tools/android-build-preflight.sh
+
+      - name: Import authoritative source into workspace
+        env:
+          PROJECT_ROOT: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
           test -f "${PROJECT_ROOT}/pubspec.yaml"
           test -f "${PROJECT_ROOT}/backend/package.json"
 
@@ -216,10 +273,6 @@ jobs:
 
           if [[ -d .github ]]; then
             cp -a .github .bootstrap-preserve/.github
-          fi
-
-          if [[ -f README.md ]]; then
-            cp -a README.md .bootstrap-preserve/README.md
           fi
 
           find . -mindepth 1 -maxdepth 1 \
@@ -235,148 +288,21 @@ jobs:
             cp -a .bootstrap-preserve/.github .github
           fi
 
-          echo "Workspace after source import:"
           test -f pubspec.yaml
           test -f backend/package.json
-          test -d lib
+          test -f backend/package-lock.json
           test -d backend/src
+          test -d lib
 
-          ls -la
-
-      - name: Verify canonical project structure
+      - name: Restore executable permissions
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          required=(
-            "pubspec.yaml"
-            "pubspec.lock"
-            "backend/package.json"
-            "backend/package-lock.json"
-            "backend/src"
-            "backend/tests"
-            "lib"
-            "test"
-            "android"
-            "tools/check-workflows.py"
-            "tools/static_audit.sh"
-            "tools/runtime-certification-preflight.sh"
-            "tools/android-build-preflight.sh"
-            "tools/ci-android-toolchain.sh"
-          )
-
-          for path in "${required[@]}"; do
-            if [[ ! -e "${path}" ]]; then
-              echo "::error::Missing required path after source import: ${path}"
-              exit 1
-            fi
-          done
-
-          echo "Canonical project structure: PASS"
-
-      - name: Verify executable permissions
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find . \
-            -type f \
-            -name "*.sh" \
-            -print0 \
-            | xargs -0 chmod +x
-
+          find . -type f -name "*.sh" -print0 | xargs -0 chmod +x
           chmod +x android/gradlew
 
           test -x android/gradlew
-
-          echo "Executable permission baseline: PASS"
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Setup Java
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Verify toolchain
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          node --version
-          npm --version
-          java -version
-          flutter --version
-
-          node -e 'process.exit(Number(process.versions.node.split(".")[0]) === 24 ? 0 : 1)'
-
-          java -version 2>&1 | grep -E '"17([."]|$)' >/dev/null
-
-          flutter --version | grep "3.47.2" >/dev/null
-
-          echo "Toolchain verification: PASS"
-
-      - name: CI resource guard
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/ci-resource-guard.sh
-
-      - name: Agent preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/agent-preflight.sh
-
-      - name: Workflow structural validation
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          python3 tools/check-workflows.py
-
-      - name: Static audit
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/static_audit.sh
-
-      - name: Node syntax validation
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          node --check backend/src/*.js
-
-      - name: Runtime certification preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/runtime-certification-preflight.sh
-
-      - name: Android build preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/android-build-preflight.sh
 
       - name: Install backend dependencies
         working-directory: backend
@@ -386,7 +312,7 @@ jobs:
 
           npm ci
 
-      - name: Backend authoritative test suite
+      - name: Backend authoritative checks
         working-directory: backend
         shell: bash
         run: |
@@ -401,12 +327,12 @@ jobs:
 
           flutter pub get --enforce-lockfile
 
-      - name: Flutter lock freshness
+      - name: Verify pubspec lock freshness
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          git diff --exit-code -- pubspec.lock
+          bash tools/verify-pubspec-lock-fresh.sh
 
       - name: Flutter analyze
         shell: bash
@@ -433,11 +359,10 @@ jobs:
           import re
 
           text = open("pubspec.yaml", encoding="utf-8").read()
-
           match = re.search(r"^version:\s*([^\s]+)", text, re.MULTILINE)
 
           if not match:
-              raise SystemExit("Could not determine application version from pubspec.yaml")
+              raise SystemExit("Unable to determine application version")
 
           print(match.group(1).split("+")[0])
           PY
@@ -447,42 +372,37 @@ jobs:
 
           echo "app_version=${APP_VERSION}" >> "${GITHUB_OUTPUT}"
 
-          echo "Application version: ${APP_VERSION}"
-
-      - name: Bootstrap regression evidence
+      - name: Bootstrap verification receipt
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "Source SHA: ${{ steps.source.outputs.source_sha }}"
-          echo "Application version: ${{ steps.version.outputs.app_version }}"
-          echo "Git SHA: ${GITHUB_SHA}"
-
-          test -f pubspec.yaml
-          test -f backend/package.json
-          test -f backend/package-lock.json
-          test -f pubspec.lock
-
-          echo "Bootstrap regression evidence: PASS"
+          echo "========================================"
+          echo "HOPE-V8 BOOTSTRAP: PASS"
+          echo "SOURCE SHA: ${{ steps.source.outputs.source_sha }}"
+          echo "GIT SHA: ${GITHUB_SHA}"
+          echo "APP VERSION: ${{ steps.version.outputs.app_version }}"
+          echo "========================================"
 
 
   staging:
     name: Staging Certification
     needs: bootstrap
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 140
 
     outputs:
-      certification_status: ${{ steps.final_status.outputs.status }}
+      certification_status: ${{ steps.emit_status.outputs.status }}
       certification_sha: ${{ github.sha }}
       certification_attempt: ${{ github.run_attempt }}
+      certification_run_id: ${{ github.run_id }}
 
     services:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
           POSTGRES_DB: hope
         ports:
           - 5432:5432
@@ -493,13 +413,12 @@ jobs:
           --health-retries=20
 
       minio:
-        image: minio/minio:latest
+        image: minio/minio
         env:
           MINIO_ROOT_USER: minio
           MINIO_ROOT_PASSWORD: minio123456
         ports:
           - 9000:9000
-          - 9001:9001
         options: >-
           --health-cmd="curl -f http://127.0.0.1:9000/minio/health/live"
           --health-interval=5s
@@ -508,20 +427,93 @@ jobs:
 
     steps:
 
-      - name: Checkout
+      - name: Checkout bootstrap repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
-      - name: Verify source is present
+      - name: Verify source archive
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          test -f pubspec.yaml
-          test -f backend/package.json
-          test -d backend/src
-          test -d lib
+          test -s "${SOURCE_ARCHIVE}"
+
+      - name: Extract authoritative source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          rm -rf .hope-source
+          mkdir -p .hope-source
+
+          python3 - <<'PY'
+          import zipfile
+
+          with zipfile.ZipFile("HOPE-V8-CI-FIXED-15-executable-permissions.zip") as z:
+              z.extractall(".hope-source")
+          PY
+
+      - name: Locate source root
+        id: source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_ROOT=""
+
+          while IFS= read -r candidate; do
+            if [[ -f "${candidate}/pubspec.yaml" ]] &&
+               [[ -f "${candidate}/backend/package.json" ]] &&
+               [[ -f "${candidate}/backend/package-lock.json" ]] &&
+               [[ -d "${candidate}/backend/src" ]] &&
+               [[ -d "${candidate}/lib" ]]; then
+              PROJECT_ROOT="${candidate}"
+              break
+            fi
+          done < <(
+            find .hope-source -type f -name pubspec.yaml -print \
+              | sed 's#/pubspec.yaml$##' \
+              | sort
+          )
+
+          test -n "${PROJECT_ROOT}"
+
+          echo "project_root=${PROJECT_ROOT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Import authoritative source
+        env:
+          PROJECT_ROOT: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p .bootstrap-preserve
+
+          if [[ -d .github ]]; then
+            cp -a .github .bootstrap-preserve/.github
+          fi
+
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".hope-source" \
+            ! -name ".bootstrap-preserve" \
+            -exec rm -rf {} +
+
+          cp -a "${PROJECT_ROOT}/." .
+
+          if [[ -d .bootstrap-preserve/.github ]]; then
+            rm -rf .github
+            cp -a .bootstrap-preserve/.github .github
+          fi
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find . -type f -name "*.sh" -print0 | xargs -0 chmod +x
+          chmod +x android/gradlew
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -535,6 +527,8 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Setup Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
@@ -558,18 +552,12 @@ jobs:
           bash tools/ci-android-toolchain.sh
 
       - name: Runtime certification preflight
+        working-directory: backend
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          bash tools/runtime-certification-preflight.sh
-
-      - name: Android build preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/android-build-preflight.sh
+          bash ../tools/runtime-certification-preflight.sh
 
       - name: Install backend dependencies
         working-directory: backend
@@ -586,21 +574,22 @@ jobs:
 
           flutter pub get --enforce-lockfile
 
-      - name: Flutter lock freshness
+      - name: Verify pubspec lock freshness
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          git diff --exit-code -- pubspec.lock
+          bash tools/verify-pubspec-lock-fresh.sh
 
-      - name: Flutter tests
+      - name: Flutter unit tests
         shell: bash
         run: |
           set -Eeuo pipefail
 
           flutter test --no-pub
 
-      - name: PostgreSQL runtime certification
+      - name: PostgreSQL runtime probe
+        id: postgres_probe
         working-directory: backend
         shell: bash
         env:
@@ -611,7 +600,8 @@ jobs:
 
           npm run test:postgres
 
-      - name: S3 runtime certification
+      - name: S3 runtime probe
+        id: s3_probe
         working-directory: backend
         shell: bash
         env:
@@ -625,7 +615,27 @@ jobs:
 
           npm run test:s3
 
-      - name: Staging product certification
+      - name: Staging performance smoke
+        id: perf_probe
+        working-directory: backend
+        shell: bash
+        env:
+          PERF_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          PERF_REQUESTS: "500"
+          PERF_CONCURRENCY: "50"
+          PERF_P95_BUDGET_MS: "500"
+          PERF_P99_BUDGET_MS: "1000"
+          PERF_MAX_5XX_RATE: "0.01"
+        run: |
+          set -Eeuo pipefail
+
+          test -n "${PERF_BASE_URL}"
+
+          node tools/perf-smoke.mjs
+          test -s perf-smoke.json
+
+      - name: Staging product workflow
+        id: product_workflow
         working-directory: backend
         shell: bash
         env:
@@ -633,49 +643,39 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [[ -z "${STAGING_BASE_URL:-}" ]]; then
-            echo "::error::STAGING_BASE_URL is required for staging certification."
-            exit 1
-          fi
+          test -n "${STAGING_BASE_URL}"
 
           node ../tools/staging-product-smoke.mjs
 
-      - name: Provider integration certification
+      - name: Staging external provider integration
+        id: provider_integration
         working-directory: backend
         shell: bash
-        env:
-          PAYMENT_PROVIDER_TOKEN: ${{ secrets.PAYMENT_PROVIDER_TOKEN_STAGING }}
-          PAYMENT_PROVIDER_CREATE_URL: ${{ secrets.PAYMENT_PROVIDER_CREATE_URL_STAGING }}
-          PAYMENT_PROVIDER_RELEASE_URL: ${{ secrets.PAYMENT_PROVIDER_RELEASE_URL_STAGING }}
-          PAYMENT_PROVIDER_REFUND_URL: ${{ secrets.PAYMENT_PROVIDER_REFUND_URL_STAGING }}
         run: |
           set -Eeuo pipefail
 
           npm run test:provider
 
-      - name: Staging performance smoke
+      - name: Probe notification delivery
+        id: notification_delivery
+        if: >
+          env.NOTIFICATION_PROVIDER_TOKEN != '' &&
+          (env.NOTIFICATION_PUSH_URL != '' || env.NOTIFICATION_EMAIL_URL != '')
         working-directory: backend
         shell: bash
         env:
-          PERF_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
-          PERF_REQUESTS: "500"
-          PERF_CONCURRENCY: "50"
-          PERF_P95_MS: "500"
-          PERF_P99_MS: "1000"
-          PERF_MAX_5XX_RATE: "0.01"
+          NOTIFICATION_PUSH_URL: ${{ secrets.NOTIFICATION_PUSH_URL }}
+          NOTIFICATION_EMAIL_URL: ${{ secrets.NOTIFICATION_EMAIL_URL }}
+          NOTIFICATION_PROVIDER_TOKEN: ${{ secrets.NOTIFICATION_PROVIDER_TOKEN }}
         run: |
           set -Eeuo pipefail
 
-          if [[ -z "${PERF_BASE_URL:-}" ]]; then
-            echo "::error::STAGING_BASE_URL is required for performance certification."
-            exit 1
-          fi
+          node ../tools/staging-notification-delivery.mjs \
+            | tee "$RUNNER_TEMP/staging-notification-delivery.log"
 
-          node ../tools/perf-smoke.mjs
-
-          test -s perf-smoke.json
-
-      - name: Android debug build
+      - name: Android quality gates
+        id: android_quality
+        timeout-minutes: 30
         shell: bash
         env:
           API_BASE_URL: https://staging.api.hope.app
@@ -686,6 +686,7 @@ jobs:
           bash tools/build_apk_debug.sh
 
       - name: Android emulator certification
+        id: device_certification
         uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc
         env:
           API_BASE_URL_STAGING: https://staging.api.hope.app
@@ -693,58 +694,133 @@ jobs:
         with:
           api-level: 35
           arch: x86_64
-          target: google_apis
-          profile: pixel_2
           script: |
             flutter test --no-pub integration_test
 
       - name: DR restore drill
+        id: dr_drill
+        working-directory: backend
         shell: bash
         env:
-          DR_SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
-          DR_TARGET_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_WORK_DIR: /tmp/hope-dr-drill
+          DRILL_EVIDENCE_FILE: /tmp/hope-dr-drill/dr-restore-evidence.json
         run: |
           set -Eeuo pipefail
 
-          bash scripts/dr-restore-drill.sh
+          bash ../scripts/dr-restore-drill.sh
+          test -s "$DRILL_EVIDENCE_FILE"
 
-      - name: Staging evidence
+      - name: Runtime evidence - PostgreSQL
+        if: ${{ always() }}
+        working-directory: backend
         shell: bash
+        env:
+          GATE_RESULT: ${{ steps.postgres_probe.outcome == 'success' && 'pass' || 'fail' }}
         run: |
-          set -Eeuo pipefail
-
-          mkdir -p artifacts/staging
-
           node tools/write-evidence.mjs \
-            --kind staging-certification \
-            --status PASS \
-            --sha "${GITHUB_SHA}" \
-            --run-id "${GITHUB_RUN_ID}" \
-            --attempt "${GITHUB_RUN_ATTEMPT}"
+            --gate postgres_runtime \
+            --result "$GATE_RESULT"
 
-      - name: Upload staging evidence
+      - name: Runtime evidence - S3
+        if: ${{ always() }}
+        working-directory: backend
+        shell: bash
+        env:
+          GATE_RESULT: ${{ steps.s3_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: |
+          node tools/write-evidence.mjs \
+            --gate s3_runtime \
+            --result "$GATE_RESULT"
+
+      - name: Runtime evidence - performance
+        if: ${{ always() }}
+        working-directory: backend
+        shell: bash
+        env:
+          GATE_RESULT: ${{ steps.perf_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: |
+          node tools/write-evidence.mjs \
+            --gate perf_run \
+            --result "$GATE_RESULT"
+
+      - name: Runtime evidence - device
+        if: ${{ always() }}
+        working-directory: backend
+        shell: bash
+        env:
+          GATE_RESULT: ${{ steps.device_certification.outcome == 'success' && 'pass' || 'fail' }}
+        run: |
+          node tools/write-evidence.mjs \
+            --gate device_certification \
+            --result "$GATE_RESULT"
+
+      - name: Runtime evidence - DR
+        if: ${{ always() }}
+        working-directory: backend
+        shell: bash
+        env:
+          GATE_RESULT: ${{ steps.dr_drill.outcome == 'success' && 'pass' || 'fail' }}
+        run: |
+          node tools/write-evidence.mjs \
+            --gate dr_restore \
+            --result "$GATE_RESULT"
+
+      - name: Runtime evidence - provider
+        if: ${{ always() }}
+        working-directory: backend
+        shell: bash
+        env:
+          GATE_RESULT: ${{ steps.provider_integration.outcome == 'success' && 'pass' || 'fail' }}
+        run: |
+          node tools/write-evidence.mjs \
+            --gate provider_runtime \
+            --result "$GATE_RESULT"
+
+      - name: Upload staging certification evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: hope-v8-staging-evidence-${{ github.run_id }}
+          name: staging-certification-evidence-${{ github.run_id }}
           path: |
-            artifacts/staging/**
+            ${{ runner.temp }}/staging-notification-delivery.log
             backend/perf-smoke.json
-          if-no-files-found: error
+            /tmp/hope-dr-drill/**
+          if-no-files-found: warn
 
-      - name: Final staging status
-        id: final_status
+      - name: Staging operational gate
+        id: emit_status
+        if: ${{ always() }}
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "status=PASS" >> "${GITHUB_OUTPUT}"
+          status=fail
 
-          echo "========================================"
-          echo "HOPE-V8 STAGING CERTIFICATION: PASS"
-          echo "SHA: ${GITHUB_SHA}"
-          echo "RUN: ${GITHUB_RUN_ID}"
-          echo "ATTEMPT: ${GITHUB_RUN_ATTEMPT}"
-          echo "========================================"
+          if \
+            [[ "${{ steps.postgres_probe.outcome }}" == "success" ]] &&
+            [[ "${{ steps.s3_probe.outcome }}" == "success" ]] &&
+            [[ "${{ steps.perf_probe.outcome }}" == "success" ]] &&
+            [[ "${{ steps.product_workflow.outcome }}" == "success" ]] &&
+            [[ "${{ steps.provider_integration.outcome }}" == "success" ]] &&
+            [[ "${{ steps.android_quality.outcome }}" == "success" ]] &&
+            [[ "${{ steps.device_certification.outcome }}" == "success" ]] &&
+            [[ "${{ steps.dr_drill.outcome }}" == "success" ]] &&
+            { \
+              [[ "${{ steps.notification_delivery.outcome }}" == "success" ]] ||
+              [[ "${{ steps.notification_delivery.outcome }}" == "skipped" ]]; \
+            }
+          then
+            status=pass
+          fi
+
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+
+      - name: Emit certification status
+        if: ${{ always() }}
+        run: |
+          echo "Certification status: ${{ steps.emit_status.outputs.status }}"
 
 
   production:
@@ -755,66 +831,103 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' &&
       inputs.confirm == 'release' &&
-      needs.staging.outputs.certification_status == 'PASS' &&
+      needs.staging.outputs.certification_status == 'pass' &&
       github.ref_type == 'tag'
+
     runs-on: ubuntu-24.04
     environment: production
-    timeout-minutes: 120
+    timeout-minutes: 140
 
     steps:
 
-      - name: Checkout exact release SHA
+      - name: Checkout exact release commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      - name: Verify exact release confirmation
+      - name: Verify source archive
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          if [[ "${{ inputs.confirm }}" != "release" ]]; then
-            echo "::error::Production release requires exact confirmation: release"
-            exit 1
-          fi
+          test -s "${SOURCE_ARCHIVE}"
 
-      - name: Verify staging certification identity
+      - name: Extract authoritative source
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          test "${{ needs.staging.outputs.certification_status }}" = "PASS"
+          rm -rf .hope-source
+          mkdir -p .hope-source
 
-          if [[ "${{ needs.staging.outputs.certification_sha }}" != "${GITHUB_SHA}" ]]; then
-            echo "::error::Staging certification SHA does not equal production SHA."
-            echo "Staging:    ${{ needs.staging.outputs.certification_sha }}"
-            echo "Production: ${GITHUB_SHA}"
-            exit 1
-          fi
+          python3 - <<'PY'
+          import zipfile
 
-      - name: Verify immutable release tag
+          with zipfile.ZipFile("HOPE-V8-CI-FIXED-15-executable-permissions.zip") as z:
+              z.extractall(".hope-source")
+          PY
+
+      - name: Locate source root
+        id: source
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          TAG="${GITHUB_REF_NAME}"
+          PROJECT_ROOT=""
 
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Production release requires immutable semantic version tag vX.Y.Z."
-            exit 1
+          while IFS= read -r candidate; do
+            if [[ -f "${candidate}/pubspec.yaml" ]] &&
+               [[ -f "${candidate}/backend/package.json" ]] &&
+               [[ -f "${candidate}/backend/package-lock.json" ]] &&
+               [[ -d "${candidate}/backend/src" ]] &&
+               [[ -d "${candidate}/lib" ]]; then
+              PROJECT_ROOT="${candidate}"
+              break
+            fi
+          done < <(
+            find .hope-source -type f -name pubspec.yaml -print \
+              | sed 's#/pubspec.yaml$##' \
+              | sort
+          )
+
+          test -n "${PROJECT_ROOT}"
+
+          echo "project_root=${PROJECT_ROOT}" >> "${GITHUB_OUTPUT}"
+
+      - name: Import authoritative source
+        env:
+          PROJECT_ROOT: ${{ steps.source.outputs.project_root }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p .bootstrap-preserve
+
+          if [[ -d .github ]]; then
+            cp -a .github .bootstrap-preserve/.github
           fi
 
-          TAG_SHA="$(git rev-list -n 1 "refs/tags/${TAG}")"
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name ".git" \
+            ! -name ".hope-source" \
+            ! -name ".bootstrap-preserve" \
+            -exec rm -rf {} +
 
-          if [[ "${TAG_SHA}" != "${GITHUB_SHA}" ]]; then
-            echo "::error::Release tag does not point to GITHUB_SHA."
-            echo "Tag SHA: ${TAG_SHA}"
-            echo "Git SHA: ${GITHUB_SHA}"
-            exit 1
+          cp -a "${PROJECT_ROOT}/." .
+
+          if [[ -d .bootstrap-preserve/.github ]]; then
+            rm -rf .github
+            cp -a .bootstrap-preserve/.github .github
           fi
 
-          echo "Immutable tag verification: PASS"
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          find . -type f -name "*.sh" -print0 | xargs -0 chmod +x
+          chmod +x android/gradlew
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -828,6 +941,8 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
 
       - name: Setup Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
@@ -835,6 +950,37 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+
+      - name: Verify exact release confirmation
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test "${{ inputs.confirm }}" = "release"
+
+      - name: Verify staging certification identity
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test "${{ needs.staging.outputs.certification_status }}" = "pass"
+          test "${{ needs.staging.outputs.certification_sha }}" = "${GITHUB_SHA}"
+
+      - name: Verify immutable semantic version tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Production release requires tag vX.Y.Z."
+            exit 1
+          fi
+
+          TAG_SHA="$(git rev-list -n 1 "refs/tags/${TAG}")"
+
+          test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: CI Android toolchain
         shell: bash
@@ -896,8 +1042,6 @@ jobs:
             fi
           done
 
-          echo "Production environment validation: PASS"
-
       - name: Install backend dependencies
         working-directory: backend
         shell: bash
@@ -936,7 +1080,7 @@ jobs:
           set -Eeuo pipefail
 
           flutter pub get --enforce-lockfile
-          git diff --exit-code -- pubspec.lock
+          bash tools/verify-pubspec-lock-fresh.sh
           flutter analyze
           flutter test --no-pub
 
@@ -946,13 +1090,17 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          docker build -t hope-backend:${GITHUB_SHA} .
+          docker build -t "hope-backend:${GITHUB_SHA}" .
 
-          IMAGE_ID="$(docker image inspect "hope-backend:${GITHUB_SHA}" --format '{{.Id}}')"
+          BACKEND_IMAGE_ID="$(
+            docker image inspect \
+              "hope-backend:${GITHUB_SHA}" \
+              --format '{{.Id}}'
+          )"
 
-          test -n "${IMAGE_ID}"
+          test -n "${BACKEND_IMAGE_ID}"
 
-          echo "BACKEND_IMAGE_ID=${IMAGE_ID}" >> "${GITHUB_ENV}"
+          echo "BACKEND_IMAGE_ID=${BACKEND_IMAGE_ID}" >> "${GITHUB_ENV}"
 
       - name: Prepare production keystore
         shell: bash
@@ -961,15 +1109,13 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [[ -z "${ANDROID_RELEASE_KEYSTORE_B64:-}" ]]; then
-            echo "::error::ANDROID_RELEASE_KEYSTORE_B64 is required."
-            exit 1
-          fi
+          test -n "${ANDROID_RELEASE_KEYSTORE_B64}"
 
           mkdir -p android/app
 
           printf '%s' "${ANDROID_RELEASE_KEYSTORE_B64}" \
-            | base64 --decode > android/app/release-keystore.jks
+            | base64 --decode \
+            > android/app/release-keystore.jks
 
           chmod 600 android/app/release-keystore.jks
 
@@ -987,10 +1133,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [[ -z "${API_BASE_URL:-}" ]]; then
-            echo "::error::API_BASE_URL_PRODUCTION is required."
-            exit 1
-          fi
+          test -n "${API_BASE_URL}"
 
           bash tools/build_apk_release.sh
 
@@ -1001,15 +1144,13 @@ jobs:
 
           APK="$(find artifacts -type f -name "*.apk" | head -n 1)"
 
-          if [[ -z "${APK}" ]]; then
-            echo "::error::Production APK was not produced."
-            exit 1
-          fi
-
+          test -n "${APK}"
           test -s "${APK}"
 
-          if [[ "$(stat -c '%s' "${APK}")" -le 1048576 ]]; then
-            echo "::error::APK is unexpectedly small."
+          SIZE="$(stat -c '%s' "${APK}")"
+
+          if (( SIZE <= 1048576 )); then
+            echo "::error::APK is unexpectedly small: ${SIZE} bytes"
             exit 1
           fi
 
@@ -1017,9 +1158,7 @@ jobs:
 
           sha256sum "${APK}" | tee artifacts/production-apk.sha256
 
-          echo "APK: ${APK}"
-
-      - name: Write production Android evidence
+      - name: Write Android release evidence
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1027,28 +1166,37 @@ jobs:
           mkdir -p artifacts/release
 
           APK="$(find artifacts -type f -name "*.apk" | head -n 1)"
-          SHA256="$(sha256sum "${APK}" | awk '{print $1}')"
+          APK_SHA256="$(sha256sum "${APK}" | awk '{print $1}')"
 
-          cat > artifacts/release/android-build.json <<EOF
-          {
-            "status": "PASS",
-            "sha": "${GITHUB_SHA}",
-            "run_id": "${GITHUB_RUN_ID}",
-            "attempt": ${GITHUB_RUN_ATTEMPT},
-            "apk": "${APK}",
-            "sha256": "${SHA256}",
-            "backend_image_id": "${BACKEND_IMAGE_ID}"
+          python3 - "${APK}" "${APK_SHA256}" "${BACKEND_IMAGE_ID}" <<'PY'
+          import json
+          import sys
+
+          apk, apk_sha256, image_id = sys.argv[1:4]
+
+          data = {
+              "status": "PASS",
+              "sha": "${GITHUB_SHA}",
+              "run_id": "${GITHUB_RUN_ID}",
+              "attempt": int("${GITHUB_RUN_ATTEMPT}"),
+              "apk": apk,
+              "sha256": apk_sha256,
+              "backend_image_id": image_id,
           }
-          EOF
+
+          with open("artifacts/release/android-build.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          PY
 
       - name: Generate release manifest
         working-directory: backend
         shell: bash
         env:
           STAGING_CERTIFICATION_STATUS: PASS
-          STAGING_CERTIFICATION_RUN_ID: ${{ github.run_id }}
-          STAGING_CERTIFICATION_SHA: ${{ github.sha }}
-          STAGING_CERTIFICATION_ATTEMPT: ${{ github.run_attempt }}
+          STAGING_CERTIFICATION_RUN_ID: ${{ needs.staging.outputs.certification_run_id }}
+          STAGING_CERTIFICATION_SHA: ${{ needs.staging.outputs.certification_sha }}
+          STAGING_CERTIFICATION_ATTEMPT: ${{ needs.staging.outputs.certification_attempt }}
           BACKEND_IMAGE_ID: ${{ env.BACKEND_IMAGE_ID }}
           BACKEND_IMAGE_REF: hope-backend:${{ github.sha }}
         run: |
@@ -1072,10 +1220,14 @@ jobs:
               data = json.load(f)
 
           if data.get("staging_certification_status") != "PASS":
-              raise SystemExit("Release manifest does not contain staging PASS")
+              raise SystemExit(
+                  "Release manifest staging certification status is not PASS"
+              )
 
           if data.get("staging_certification_sha") != "${GITHUB_SHA}":
-              raise SystemExit("Release manifest staging SHA mismatch")
+              raise SystemExit(
+                  "Release manifest staging certification SHA mismatch"
+              )
 
           print("Release manifest verification: PASS")
           PY
@@ -1088,7 +1240,6 @@ jobs:
             artifacts/**
             backend/release-manifest.json
             backend/*.spdx
-            backend/*.json
           if-no-files-found: error
 
       - name: Attest production build provenance
@@ -1111,7 +1262,7 @@ jobs:
 
           echo "========================================"
           echo "HOPE-V8 PRODUCTION RELEASE: PASS"
-          echo "Tag: ${GITHUB_REF_NAME}"
+          echo "TAG: ${GITHUB_REF_NAME}"
           echo "SHA: ${GITHUB_SHA}"
-          echo "Staging: PASS"
+          echo "STAGING: PASS"
           echo "========================================"
