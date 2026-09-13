@@ -60,6 +60,14 @@ jobs:
             exit 1
           }
 
+          test -f .github/workflows/bootstrap.yml || {
+            echo "ERROR: active .github/workflows/bootstrap.yml is missing before import." >&2
+            exit 1
+          }
+
+          BOOTSTRAP_BACKUP="$RUNNER_TEMP/bootstrap.yml"
+          cp .github/workflows/bootstrap.yml "$BOOTSTRAP_BACKUP"
+
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
 
@@ -84,8 +92,8 @@ jobs:
           test -d "$TMP/.github/workflows"
 
           # Import all project files, including final workflows, except the
-          # active bootstrap.yml. The existing bootstrap remains byte-for-byte
-          # untouched, while every other final workflow is installed.
+          # active bootstrap.yml. IMPORTANT: do not copy the workflows directory
+          # as a whole, because that would overwrite the excluded bootstrap.
           while IFS= read -r -d '' item; do
             rel="${item#"$TMP"/}"
 
@@ -93,10 +101,11 @@ jobs:
               .git|.git/*)
                 continue
                 ;;
-              .github/workflows/bootstrap.yml)
+              .github/workflows|.github/workflows/)
                 continue
                 ;;
-              .github/workflows)
+              .github/workflows/bootstrap.yml)
+                continue
                 ;;
             esac
 
@@ -105,6 +114,9 @@ jobs:
             mkdir -p "$(dirname "$target")"
             cp -a "$item" "$target"
           done < <(find "$TMP" -mindepth 1 -print0)
+
+          # Never allow the ZIP to replace the active bootstrap.
+          cp "$BOOTSTRAP_BACKUP" .github/workflows/bootstrap.yml
 
           # Remove any malformed nested workflow tree from a previous import.
           rm -rf .github/workflows/.github
@@ -166,7 +178,10 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          git diff -- .github/workflows/bootstrap.yml
+          cmp -s "$RUNNER_TEMP/bootstrap.yml" .github/workflows/bootstrap.yml || {
+            echo "ERROR: active bootstrap differs from its pre-import byte-for-byte backup." >&2
+            exit 1
+          }
 
           if git diff --quiet -- .github/workflows/bootstrap.yml; then
             echo "BOOTSTRAP_PRESERVED_PASS"
