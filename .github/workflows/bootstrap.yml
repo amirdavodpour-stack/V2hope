@@ -37,8 +37,7 @@ jobs:
           archives=( *.zip )
 
           if [ "${#archives[@]}" -eq 0 ]; then
-            echo "No ZIP archive found."
-            echo "Bootstrap can only import a project from a ZIP archive."
+            echo "ERROR: No ZIP archive found."
             exit 1
           fi
 
@@ -76,7 +75,7 @@ jobs:
           )
 
           if [ "${#roots[@]}" -ne 1 ]; then
-            echo "Expected exactly one valid HOPE-V8 project root."
+            echo "ERROR: Expected exactly one valid HOPE-V8 project root."
             echo "Found ${#roots[@]} valid roots:"
             printf '  %s\n' "${roots[@]:-<none>}"
             exit 1
@@ -110,12 +109,12 @@ jobs:
 
           for workflow in "${required_workflows[@]}"; do
             if [ ! -f "$workflow" ]; then
-              echo "Missing required workflow: $workflow"
+              echo "ERROR: Missing required workflow: $workflow"
               exit 1
             fi
           done
 
-          echo "All canonical workflows are present in the imported project."
+          echo "All canonical workflows are present."
 
       - name: Verify production workflow secret contract
         shell: bash
@@ -150,7 +149,7 @@ jobs:
 
           for secret_name in "${required_secrets[@]}"; do
             if ! grep -q "$secret_name" "$production_workflow"; then
-              echo "Production workflow does not reference required secret: $secret_name"
+              echo "ERROR: Production workflow does not reference required secret: $secret_name"
               exit 1
             fi
           done
@@ -168,7 +167,7 @@ jobs:
             '^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/staging-certification\.yml' \
             .github/workflows/bootstrap.yml; then
             echo "ERROR: bootstrap.yml must not call staging-certification.yml."
-            echo "Bootstrap validates/imports the project; it does not dynamically extend GitHub's workflow graph."
+            echo "Bootstrap cannot dynamically extend GitHub's workflow graph."
             exit 1
           fi
 
@@ -188,7 +187,7 @@ jobs:
           java-version: "17"
 
       - name: Install Flutter 3.47.2
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: "3.47.2"
           channel: stable
@@ -247,7 +246,7 @@ jobs:
 
           if [ "$failures" -ne 0 ]; then
             echo
-            echo "Executable permission contract failed."
+            echo "ERROR: Executable permission contract failed."
             echo "Repackage the project with POSIX executable bits preserved."
             exit 1
           fi
@@ -339,7 +338,7 @@ jobs:
 
       - name: Upload bootstrap verification report
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: hope-v8-bootstrap-report
           path: |
