@@ -1,708 +1,757 @@
-name: HOPE-V8 Bootstrap
-
-on:
-  workflow_dispatch:
-  push:
-    paths:
-      - '*.zip'
-      - '.github/workflows/bootstrap.yml'
-
-permissions:
-  contents: read
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-jobs:
-  bootstrap-and-verify:
-    name: Bootstrap and Verify HOPE-V8
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Discover and safely extract project archive
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ROOT="$GITHUB_WORKSPACE"
-          TMP="$RUNNER_TEMP/hope-v8-bootstrap"
-          EXTRACT="$TMP/extracted"
-
-          rm -rf "$TMP"
-          mkdir -p "$EXTRACT"
-
-          mapfile -t ZIPS < <(
-            find "$ROOT" \
-              -maxdepth 2 \
-              -type f \
-              -iname '*.zip' \
-              -not -path '*/.git/*' \
-              | sort
-          )
-
-          if [ "${#ZIPS[@]}" -eq 0 ]; then
-            echo 'No project ZIP found at repository root.' >&2
-            exit 1
-          fi
-
-          mapfile -t HOPE_ZIPS < <(
-            printf '%s\n' "${ZIPS[@]}" |
-            grep -Ei '/(hope|v[0-9]+|release|final|source|build|session)[^/]*\.zip$' ||
-            true
-          )
-
-          if [ "${#HOPE_ZIPS[@]}" -gt 0 ]; then
-            ZIP="$(ls -1t "${HOPE_ZIPS[@]}" | head -n1)"
-          else
-            ZIP="$(ls -1t "${ZIPS[@]}" | head -n1)"
-          fi
-
-          echo "Using archive: $(basename "$ZIP")"
-
-          while IFS= read -r entry; do
-            entry="${entry//\\//}"
-
-            case "$entry" in
-              /*|../*|*/../*|*/..|.git|.git/*|*/.git/*)
-                echo "Unsafe ZIP path: $entry" >&2
-                exit 1
-                ;;
-            esac
-          done < <(unzip -Z1 "$ZIP")
-
-          unzip -q "$ZIP" -d "$EXTRACT"
-
-          is_project_root() {
-            [ -f "$1/pubspec.yaml" ] &&
-            [ -f "$1/backend/package.json" ] &&
-            [ -d "$1/lib" ] &&
-            [ -d "$1/backend/src" ]
-          }
-
-          SRC=""
-
-          if is_project_root "$EXTRACT"; then
-            SRC="$EXTRACT"
-          else
-            while IFS= read -r pubspec; do
-              candidate="$(dirname "$pubspec")"
-
-              if is_project_root "$candidate"; then
-                SRC="$candidate"
-                break
-              fi
-            done < <(
-              find "$EXTRACT" \
-                -maxdepth 6 \
-                -type f \
-                -name pubspec.yaml \
-                -print |
-                sort
-            )
-          fi
-
-          if [ -z "$SRC" ]; then
-            echo 'No valid HOPE project root found in ZIP.' >&2
-            exit 1
-          fi
-
-          echo "Project root: ${SRC#$EXTRACT/}"
-
-          rm -rf \
-            "$ROOT/backend" \
-            "$ROOT/lib" \
-            "$ROOT/android" \
-            "$ROOT/ios" \
-            "$ROOT/web" \
-            "$ROOT/assets" \
-            "$ROOT/test" \
-            "$ROOT/integration_test" \
-            "$ROOT/docs"
-
-          for item in \
-            "$SRC"/* \
-            "$SRC"/.[!.]* \
-            "$SRC"/..?*
-          do
-            [ -e "$item" ] || continue
-
-            base="${item##*/}"
-
-            case "$base" in
-              .github|.git)
-                continue
-                ;;
-            esac
-
-            cp -a "$item" "$ROOT/"
-          done
-
-          echo 'PASS: project imported.'
-
-      - name: Create canonical project workflows
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          WORKFLOW_DIR="$GITHUB_WORKSPACE/.github/workflows"
-
-          mkdir -p "$WORKFLOW_DIR"
-
-          cat > "$WORKFLOW_DIR/main.yml" <<'YAML'
-          name: HOPE-V8 Main CI
-
-          on:
-            push:
-              branches:
-                - main
-            pull_request:
-              branches:
-                - main
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          env:
-            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-          jobs:
-            mobile-ci:
-              name: Mobile CI
-              runs-on: ubuntu-latest
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-                - name: Setup Flutter
-                  uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-                  with:
-                    flutter-version: '3.47.2'
-                    cache: true
-
-                - name: Verify Flutter lockfile
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/verify-pubspec-lock-fresh.sh
-
-                - name: Validate API_BASE_URL
-                  shell: bash
-                  env:
-                    API_BASE_URL: ${{ secrets.API_BASE_URL }}
-                  run: |
-                    set -Eeuo pipefail
-
-                    if [ -z "${API_BASE_URL:-}" ]; then
-                      echo "API_BASE_URL secret is required" >&2
-                      exit 1
-                    fi
-
-                    case "$API_BASE_URL" in
-                      https://*)
-                        ;;
-                      *)
-                        echo "API_BASE_URL must use HTTPS" >&2
-                        exit 1
-                        ;;
-                    esac
-
-                    if [[ "$API_BASE_URL" =~ [[:space:]] ]]; then
-                      echo "API_BASE_URL contains whitespace or is malformed" >&2
-                      exit 1
-                    fi
-
-                    if ! printf '%s\n' "$API_BASE_URL" | grep -Eq '^https://[^[:space:]]+$'; then
-                      echo "API_BASE_URL contains whitespace or is malformed" >&2
-                      exit 1
-                    fi
-
-                - name: Flutter dependencies
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter pub get --enforce-lockfile
-
-                - name: Flutter tests
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter test --no-pub
-
-                - name: Backend audit
-                  working-directory: backend
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-
-                    set +e
-                    npm audit --audit-level=high
-                    status=$?
-                    set -e
-
-                    if [ "$status" -ne 0 ]; then
-                      echo "npm audit failed with status $status" >&2
-                      exit "$status"
-                    fi
-          YAML
-
-          cat > "$WORKFLOW_DIR/device-integration.yml" <<'YAML'
-          name: HOPE-V8 Device Integration
-
-          on:
-            workflow_dispatch:
-            pull_request:
-              branches:
-                - main
-
-          permissions:
-            contents: read
-
-          jobs:
-            device-integration:
-              name: Android Device Integration
-              runs-on: ubuntu-latest
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-                - name: Setup Flutter
-                  uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-                  with:
-                    flutter-version: '3.47.2'
-                    cache: true
-
-                - name: Verify Flutter lockfile
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/verify-pubspec-lock-fresh.sh
-
-                - name: Android toolchain contract
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/ci-android-toolchain.sh
-
-                - name: Flutter dependencies
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter pub get --enforce-lockfile
-
-                - name: Integration tests
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter test --no-pub integration_test
-          YAML
-
-          cat > "$WORKFLOW_DIR/staging-certification.yml" <<'YAML'
-          name: HOPE-V8 Staging Certification
-
-          on:
-            workflow_call:
-              secrets:
-                STAGING_BASE_URL:
-                  required: true
-                STAGING_S3_ENDPOINT:
-                  required: false
-                DRILL_DATABASE_URL:
-                  required: false
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          jobs:
-            staging-certification:
-              name: Staging Certification
-              runs-on: ubuntu-latest
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-                - name: Verify Flutter lockfile
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/verify-pubspec-lock-fresh.sh
-
-                - name: Staging external integration gate
-                  shell: bash
-                  env:
-                    STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
-                  run: |
-                    set -Eeuo pipefail
-
-                    if [ -z "${STAGING_BASE_URL:-}" ]; then
-                      echo "STAGING_BASE_URL is required" >&2
-                      exit 1
-                    fi
-
-                    case "$STAGING_BASE_URL" in
-                      https://*)
-                        ;;
-                      *)
-                        echo "STAGING_BASE_URL must use HTTPS" >&2
-                        exit 1
-                        ;;
-                    esac
-
-                - name: Staging product workflow
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/staging-smoke.sh
-
-                - name: Staging operational gate
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    node tools/staging-operational-gate.mjs
-
-                - name: S3 runtime probe
-                  shell: bash
-                  env:
-                    STAGING_S3_ENDPOINT: ${{ secrets.STAGING_S3_ENDPOINT }}
-                    S3_REQUIRE_HTTPS: '0'
-                  run: |
-                    set -Eeuo pipefail
-
-                    if [ -n "${STAGING_S3_ENDPOINT:-}" ]; then
-                      echo "S3 staging endpoint configured."
-                      echo "S3_REQUIRE_HTTPS=$S3_REQUIRE_HTTPS"
-                    else
-                      echo "S3 runtime probe skipped: STAGING_S3_ENDPOINT not configured."
-                    fi
-
-                - name: DR restore drill
-                  shell: bash
-                  env:
-                    DRILL_DATABASE_URL: ${{ secrets.DRILL_DATABASE_URL }}
-                  run: |
-                    set -Eeuo pipefail
-
-                    if [ -z "${DRILL_DATABASE_URL:-}" ]; then
-                      echo "DR restore drill skipped: DRILL_DATABASE_URL not configured."
-                      exit 0
-                    fi
-
-                    bash tools/staging-resilience-drill.sh
-
-                - name: Android emulator certification
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/android-runtime-cert-contract.sh
-
-                - name: Staging Flutter validation
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-
-                    flutter pub get --enforce-lockfile
-                    flutter test --no-pub
-          YAML
-
-          cat > "$WORKFLOW_DIR/production-release.yml" <<'YAML'
-          name: HOPE-V8 Production Release
-
-          on:
-            workflow_dispatch:
-            push:
-              tags:
-                - 'v*'
-
-          permissions:
-            contents: read
-
-          jobs:
-            staging-certification:
-              name: Staging Certification
-              uses: ./.github/workflows/staging-certification.yml
-              secrets: inherit
-
-            production:
-              name: Production Release
-              needs: staging-certification
-              runs-on: ubuntu-latest
-              environment: production
-
-              steps:
-                - name: Checkout
-                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-                - name: Enforce immutable release tag
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-
-                    if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
-                      echo "Production release must originate from an immutable version tag." >&2
-                      exit 1
-                    fi
-
-                    TAG="${GITHUB_REF#refs/tags/}"
-                    VERSION="$(node -p "require('./backend/package.json').version")"
-
-                    if [ "$TAG" != "v$VERSION" ]; then
-                      echo "Release tag $TAG does not match application version v$VERSION" >&2
-                      exit 1
-                    fi
-
-                - name: Verify Flutter lockfile
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    bash tools/verify-pubspec-lock-fresh.sh
-
-                - name: Flutter dependencies
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter pub get --enforce-lockfile
-
-                - name: Flutter release tests
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    flutter test --no-pub
-
-                - name: Production npm audit
-                  working-directory: backend
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    npm audit --audit-level=high
-
-                - name: Build production backend image
-                  working-directory: backend
-                  shell: bash
-                  run: |
-                    set -Eeuo pipefail
-                    docker build --pull --file Dockerfile --tag hope-api:${GITHUB_SHA} .
-          YAML
-
-          echo 'PASS: canonical project workflows created.'
-
-      - name: Verify canonical workflow set
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          required_workflows=(
-            ".github/workflows/bootstrap.yml"
-            ".github/workflows/main.yml"
-            ".github/workflows/device-integration.yml"
-            ".github/workflows/staging-certification.yml"
-            ".github/workflows/production-release.yml"
-          )
-
-          for workflow in "${required_workflows[@]}"; do
-            test -s "$workflow" || {
-              echo "Missing required workflow: $workflow" >&2
-              exit 1
-            }
-          done
-
-          duplicate_bootstrap="$(
-            find tools backend lib test integration_test \
-              -type f \
-              \( \
-                -name 'bootstrap-v8.sh' \
-                -o \
-                -name 'bootstrap-dependencies.sh' \
-              \) \
-              -print 2>/dev/null || true
-          )"
-
-          if [ -n "$duplicate_bootstrap" ]; then
-            echo 'Duplicate internal Bootstrap detected:' >&2
-            printf '%s\n' "$duplicate_bootstrap" >&2
-            exit 1
-          fi
-
-          python3 tools/check-workflows.py
-
-          echo 'PASS: canonical workflow set and workflow contracts'
-
-      - name: Setup Node 24
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Setup Java 17
-        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Setup Flutter 3.47.2
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version: '3.47.2'
-          cache: true
-
-      - name: Validate repository structure
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          required=(
-            pubspec.yaml
-            pubspec.lock
-            backend/package.json
-            backend/package-lock.json
-            lib
-            backend/src
-            tools/check-workflows.py
-            tools/verify-pubspec-lock-fresh.sh
-            tools/ci-android-toolchain.sh
-            tools/android-runtime-cert-contract.sh
-            tools/staging-resilience-drill.sh
-            tools/staging-operational-gate.mjs
-            tools/staging-smoke.sh
-          )
-
-          for path in "${required[@]}"; do
-            if [ ! -e "$path" ]; then
-              echo "Missing required path: $path" >&2
-              exit 1
-            fi
-          done
-
-          python3 tools/check-workflows.py
-
-          echo 'PASS: repository structure and workflow contracts'
-
-      - name: Backend dependency install and core syntax
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          npm ci --ignore-scripts
-
-          node --check src/server.js
-          node --check src/app.js
-          node --check src/db.js
-
-          echo 'PASS: backend dependencies and core syntax'
-
-      - name: Persistence boundary
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ROUTES_DIR="src/routes"
-          REPORT="$RUNNER_TEMP/hope-route-db-refs.txt"
-
-          if [ ! -d "$ROUTES_DIR" ]; then
-            echo "Missing routes directory: $ROUTES_DIR" >&2
-            exit 1
-          fi
-
-          : > "$REPORT"
-
-          set +e
-
-          grep -RInE \
-            --include='*.js' \
-            'db\.(collection|insert|update|touch|reset|save)' \
-            "$ROUTES_DIR" \
-            > "$REPORT" \
-            2>/dev/null
-
-          grep_status=$?
-
-          set -e
-
-          if [ "$grep_status" -gt 1 ]; then
-            echo "Persistence boundary grep failed with exit code $grep_status" >&2
-            exit "$grep_status"
-          fi
-
-          refs="$(wc -l < "$REPORT" | tr -d ' ')"
-
-          if [ "$refs" -ne 0 ]; then
-            echo "Route persistence boundary broken: $refs direct db refs" >&2
-            cat "$REPORT" >&2
-            exit 1
-          fi
-
-          echo 'PASS: route persistence boundary = 0 direct db.* refs'
-
-      - name: Backend fast and architecture gates
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          npm run test:fast
-          npm run test:contract
-          npm run test:architecture-layers
-
-      - name: Backend operational and product gates
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          npm run test:backup
-          npm run test:staging-contract
-          npm run test:release-evidence
-          npm run test:payment-e2e
-          npm run test:notifications
-          npm run test:analytics
-          npm run test:wave10
-          npm run test:product
-
-      - name: Dependency audit
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          npm audit --audit-level=high
-
-      - name: Flutter validation
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          version="$(
-            flutter --version |
-            sed -n '1s/Flutter \([^ ]*\).*/\1/p'
-          )"
-
-          if [ "$version" != "3.47.2" ]; then
-            echo "Flutter 3.47.2 required; found ${version:-unknown}" >&2
-            exit 1
-          fi
-
-          flutter pub get --enforce-lockfile
-          flutter analyze
-          flutter test --no-pub
-
-          echo 'PASS: Flutter validation'
-
-      - name: Upload bootstrap report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: hope-v8-bootstrap-report
-          path: |
-            backend/test-results/**
-            test-results/**
-          if-no-files-found: ignore
+HOPE V8 — CANONICAL BOOTSTRAP / REPAIR / CERTIFICATION INSTRUCTION
+
+You are operating on the GitHub repository:
+
+"amirdavodpour-stack/V2hope"
+
+Your job is to maintain, repair, validate, and certify the HOPE V8 project.
+
+1. ABSOLUTE SOURCE OF TRUTH
+
+The canonical project baseline is the latest corrected HOPE V8 build:
+
+"HOPE-V8-CORRECTED-FINAL-20260913.zip"
+
+SHA-256:
+
+"30c41c18415cb029300e66da10b2f87c46b1b35939e4bb26c0d0fda5047b42f8"
+
+Treat this architecture and its working files as the authoritative baseline.
+
+DO NOT recreate the project from scratch.
+
+DO NOT replace working implementation with simplified placeholder implementations.
+
+DO NOT generate a reduced or "minimal" version of the project.
+
+DO NOT overwrite working files merely to make a test pass.
+
+DO NOT remove existing functionality.
+
+DO NOT weaken security controls.
+
+DO NOT fake infrastructure evidence.
+
+DO NOT claim PASS when a real infrastructure gate has not actually executed successfully.
+
+---
+
+2. PRIMARY OBJECTIVE
+
+Bring the repository to a clean, deterministic, production-oriented HOPE V8 state while preserving all existing functionality.
+
+The final repository must:
+
+1. build successfully;
+2. pass all available automated tests;
+3. preserve the existing backend architecture;
+4. preserve PostgreSQL as the production persistence layer;
+5. preserve the persistence boundary;
+6. preserve all security hardening;
+7. preserve release and staging contracts;
+8. preserve Android/mobile release contracts;
+9. preserve CI/CD workflows;
+10. remain deterministic and fail-closed;
+11. contain no obsolete bootstrap implementation;
+12. contain no duplicate or conflicting bootstrap logic;
+13. contain no fake evidence or fake production gates.
+
+---
+
+3. CRITICAL WORKFLOW PRESERVATION RULE
+
+The ".github/workflows/" directory is CANONICAL.
+
+Never replace the existing canonical workflows with simplified generated workflows.
+
+In particular, NEVER generate simplified versions of:
+
+- ".github/workflows/main.yml"
+- ".github/workflows/device-integration.yml"
+- ".github/workflows/staging-certification.yml"
+- ".github/workflows/production-release.yml"
+
+The production release workflow MUST retain its complete production security contract.
+
+The production release workflow must explicitly reference all of the following production secrets/configuration contracts:
+
+- "ACCESS_TOKEN_SECRET_PRODUCTION"
+- "REFRESH_TOKEN_SECRET_PRODUCTION"
+- "PAYMENT_WEBHOOK_SECRET_PRODUCTION"
+- "RESET_TOKEN_DELIVERY_SECRET_PRODUCTION"
+- "ALLOWED_CORS_ORIGINS_PRODUCTION"
+
+If any of these disappear from the production workflow, the implementation is considered BROKEN.
+
+Do not "fix" a failing test by removing or weakening its contract.
+
+---
+
+4. BOOTSTRAP MUST NOT DESTROY CANONICAL CI/CD
+
+When synchronizing, extracting, copying, or restoring a project archive:
+
+- never overwrite ".github/";
+- never overwrite ".git/";
+- never replace canonical workflows with generated alternatives;
+- never generate a second bootstrap system;
+- never introduce ".github/bootstrap/" unless explicitly required by the existing canonical architecture;
+- never restore obsolete internal bootstrap scripts.
+
+The bootstrap mechanism must be NON-DESTRUCTIVE.
+
+If a project archive contains ".github/", treat the repository's existing ".github/" as authoritative unless a deliberate repair is explicitly required.
+
+---
+
+5. OBSOLETE BOOTSTRAP IMPLEMENTATIONS
+
+The following obsolete files MUST NOT exist:
+
+- "tools/bootstrap-v8.sh"
+- "tools/bootstrap-dependencies.sh"
+
+The repository MUST NOT contain competing bootstrap implementations.
+
+There must be one canonical bootstrap workflow.
+
+---
+
+6. REQUIRED WORKFLOWS
+
+The following files MUST exist:
+
+- ".github/workflows/bootstrap.yml"
+- ".github/workflows/main.yml"
+- ".github/workflows/device-integration.yml"
+- ".github/workflows/staging-certification.yml"
+- ".github/workflows/production-release.yml"
+
+Do not delete or rename them.
+
+---
+
+7. ACTION PINNING
+
+All third-party GitHub Actions MUST be pinned to immutable commit SHAs.
+
+Use the known-good versions already established by the corrected HOPE V8 baseline.
+
+In particular:
+
+"actions/setup-node"
+
+MUST use:
+
+"249970729cb0ef3589644e2896645e5dc5ba9c38"
+
+which corresponds to setup-node v6.5.0.
+
+"actions/upload-artifact"
+
+MUST use:
+
+"ea165f8d65b6e75b540449e92b4886f43607fa02"
+
+which corresponds to upload-artifact v4.6.2.
+
+Never use floating references such as:
+
+- "@main"
+- "@master"
+- "@v4"
+- "@v5"
+- "@v6"
+
+for third-party actions.
+
+Run:
+
+"python3 tools/check-workflows.py"
+
+and require it to pass.
+
+---
+
+8. BOOTSTRAP EXTRACTION SAFETY
+
+Any ZIP extraction performed by bootstrap MUST protect against path traversal.
+
+Reject entries containing unsafe paths such as:
+
+- absolute paths;
+- "../";
+- paths escaping the intended extraction directory;
+- symlink-based traversal where applicable.
+
+Only extract files into the intended project directory.
+
+---
+
+9. PROJECT ROOT DETECTION
+
+When processing an archive:
+
+1. safely extract it;
+2. detect whether the archive contains a single project-root directory;
+3. otherwise use the archive root;
+4. verify that the resulting directory is a valid HOPE project;
+5. never blindly copy an unknown directory over the repository.
+
+Required project structure must be validated before replacement.
+
+---
+
+10. PERSISTENCE ARCHITECTURE
+
+Production persistence is PostgreSQL.
+
+Do NOT reintroduce direct legacy persistence.
+
+The production backend MUST NOT depend on:
+
+"db.collection"
+
+for normal application persistence.
+
+The production runtime must fail closed if PostgreSQL is unavailable.
+
+Legacy persistence adapters are allowed only where explicitly designated by the existing architecture and test runtime.
+
+Do not move production code back to legacy persistence simply to make tests pass.
+
+Do not bypass the application/service persistence boundary.
+
+---
+
+11. PERSISTENCE BOUNDARY
+
+Application routes must not directly perform legacy database operations.
+
+Maintain the existing persistence boundary.
+
+The route layer must delegate persistence to the appropriate application/service/repository layer.
+
+Do not reintroduce:
+
+- direct "db.collection" usage;
+- ad-hoc persistence mutations;
+- hidden legacy persistence;
+- duplicate persistence implementations.
+
+If a legacy compatibility adapter is required for tests, keep it isolated under the existing legacy compatibility architecture.
+
+---
+
+12. SECURITY REQUIREMENTS
+
+Do not weaken or remove any existing security hardening.
+
+Preserve at minimum:
+
+- PBKDF2 password hashing at the established production work factor;
+- password rehashing;
+- JWT issuer validation;
+- JWT audience validation;
+- bounded JWT lifetime;
+- "iat" validation;
+- "jti" handling;
+- timestamped webhook signatures;
+- replay protection;
+- timing-safe secret comparison;
+- authenticated reset-token delivery;
+- bounded idempotency keys;
+- explicit production CORS;
+- upload-size enforcement;
+- file/magic-byte validation;
+- HTTP security headers;
+- request timeouts;
+- trusted-proxy hardening;
+- fail-closed security-sensitive endpoints;
+- production storage policy;
+- production payment-provider policy;
+- secure Docker runtime configuration.
+
+Never replace cryptographic verification with a boolean or test bypass.
+
+Never hard-code production secrets.
+
+Never introduce localhost fallbacks into production security configuration.
+
+---
+
+13. PAYMENT SECURITY
+
+Payment webhooks must retain:
+
+- timestamp validation;
+- replay protection;
+- cryptographic signature verification;
+- timing-safe comparison;
+- provider boundary validation.
+
+Never disable webhook verification in production.
+
+Never accept an unsigned production webhook.
+
+Never use a development secret as a production fallback.
+
+---
+
+14. RESET TOKEN SECURITY
+
+Reset-token delivery must remain cryptographically authenticated.
+
+Never remove:
+
+"RESET_TOKEN_DELIVERY_SECRET_PRODUCTION"
+
+from the production security contract.
+
+Never replace cryptographic validation with a development-only bypass.
+
+---
+
+15. CORS
+
+Production CORS must be explicit.
+
+Never use a wildcard production CORS policy.
+
+Never silently fall back to localhost in production.
+
+The production release workflow must retain:
+
+"ALLOWED_CORS_ORIGINS_PRODUCTION"
+
+as part of its security contract.
+
+---
+
+16. STORAGE
+
+Production object storage must use the existing secure storage boundary.
+
+Preserve:
+
+- signed/direct upload controls;
+- content/magic-byte validation;
+- upload-size limits;
+- production credential requirements;
+- secure storage configuration.
+
+Do not introduce local filesystem persistence as a production substitute.
+
+---
+
+17. DOCKER
+
+Production backend container hardening must remain intact.
+
+Preserve:
+
+- non-root execution;
+- read-only filesystem where configured;
+- loopback/internal binding where required;
+- production environment validation;
+- secure runtime defaults.
+
+Do not weaken Docker security to make a local test pass.
+
+---
+
+18. STAGING CERTIFICATION
+
+Staging certification must remain fail-closed for mandatory gates.
+
+Preserve the existing staging contracts for:
+
+- external connectivity;
+- disaster recovery;
+- device certification;
+- database runtime;
+- storage runtime;
+- provider runtime;
+- performance;
+- release evidence.
+
+A notification delivery check may legitimately report "success" OR "skipped" when provider secrets are intentionally absent, according to the existing contract.
+
+Do NOT convert a missing infrastructure dependency into a fake PASS.
+
+---
+
+19. EVIDENCE INTEGRITY
+
+Evidence must be outcome-derived.
+
+Never fabricate:
+
+- successful deployment;
+- PostgreSQL availability;
+- S3/R2 availability;
+- payment-provider availability;
+- Android device certification;
+- Flutter toolchain certification;
+- performance certification;
+- disaster-recovery certification.
+
+If infrastructure is unavailable, report the actual blocked/missing state.
+
+Do not weaken a gate merely to increase the readiness score.
+
+---
+
+20. PERFORMANCE
+
+Do not weaken production rate limiting or security controls to make performance tests pass.
+
+HTTP 429 responses caused by intentional rate limiting are not automatically application failures.
+
+Do not convert rate-limit failures into artificial success.
+
+Do not disable rate limiting during certification merely to obtain a passing score.
+
+---
+
+21. ANDROID / FLUTTER
+
+Preserve the existing Android/mobile release contract.
+
+Required toolchain contracts include:
+
+Flutter:
+
+"3.47.2"
+
+Java:
+
+"17"
+
+Android SDK:
+
+"platforms;android-36"
+
+Build tools:
+
+"36.0.0"
+
+NDK:
+
+"28.2.13676358"
+
+Release-oriented workflows must use the existing lockfile discipline.
+
+Use:
+
+"flutter pub get --enforce-lockfile"
+
+where required.
+
+CI test execution must preserve:
+
+"flutter test --no-pub"
+
+where required by the canonical workflow.
+
+Never silently regenerate or modify the lockfile during CI.
+
+Lock drift must fail closed.
+
+---
+
+22. APK RELEASE INTEGRITY
+
+Preserve the existing release contracts for:
+
+- canonical APK naming/version;
+- APK signature verification;
+- manifest verification;
+- provenance;
+- SHA-256 integrity manifest;
+- SBOM;
+- immutable release version tag;
+- staging certification linkage.
+
+Never mark an unsigned APK as release-ready.
+
+Never bypass signature verification.
+
+Never generate fake provenance.
+
+---
+
+23. PRODUCTION RELEASE
+
+Production release must remain fail-closed.
+
+Preserve:
+
+- immutable version tags;
+- explicit production confirmation;
+- staging certification linkage;
+- release manifest;
+- security evidence;
+- SBOM;
+- provenance;
+- APK integrity;
+- production environment contract.
+
+The production release workflow must NOT be simplified.
+
+---
+
+24. TESTING REQUIREMENT
+
+After any modification, run the complete available validation suite.
+
+At minimum run:
+
+"npm run test:fast"
+
+"npm run test:contract"
+
+"npm run test:architecture-layers"
+
+"npm run test:backup"
+
+"npm run test:staging-contract"
+
+"npm run test:release-evidence"
+
+"npm run test:payment-e2e"
+
+"npm run test:notifications"
+
+"npm run test:analytics"
+
+"npm run test:wave10"
+
+"npm run test:product"
+
+Also run the targeted release/security/evidence tests:
+
+"NODE_ENV=test node --test tests/device-certification-contract.test.mjs tests/evidence-contract.test.mjs tests/executable-permissions.test.mjs tests/production-env-contract.test.mjs tests/release-hardening-contract.test.mjs tests/release-manifest-contract.test.mjs tests/resilience-contract.test.mjs tests/security-hardening-v4.test.mjs"
+
+And:
+
+"python3 tools/check-workflows.py"
+
+---
+
+25. EXPECTED BACKEND BASELINE
+
+The corrected baseline has already achieved:
+
+- 247 backend fast tests passing;
+- 72 targeted security/release/evidence tests passing;
+- workflow lint passing;
+- contract gates passing;
+- architecture gates passing;
+- backup gates passing;
+- staging contract gates passing;
+- release evidence gates passing;
+- payment E2E gates passing;
+- notification gates passing;
+- analytics gates passing;
+- wave/product gates passing.
+
+Do not introduce regressions into this baseline.
+
+---
+
+26. FILE PERMISSIONS
+
+All shell scripts must:
+
+- be executable;
+- begin with a valid shebang.
+
+Android:
+
+"android/gradlew"
+
+must remain executable.
+
+Do not change executable permissions unnecessarily.
+
+---
+
+27. NODE DEPENDENCIES
+
+Use the existing lockfiles.
+
+Do not delete lockfiles.
+
+Do not regenerate dependencies unless required.
+
+Use:
+
+"npm ci"
+
+for deterministic installation.
+
+Do not replace "npm ci" with "npm install" in CI.
+
+---
+
+28. AUDIT
+
+The CI/release security contract must retain the existing npm audit policy.
+
+High-severity vulnerabilities must not be silently ignored.
+
+Do not change the audit threshold simply to obtain PASS.
+
+---
+
+29. CHANGE POLICY
+
+Before changing any file:
+
+1. inspect the existing implementation;
+2. identify the actual defect;
+3. make the smallest safe correction;
+4. preserve surrounding architecture;
+5. run the relevant tests;
+6. run the complete validation suite before finalizing.
+
+Never perform broad destructive rewrites.
+
+Never replace a working subsystem with a simplified implementation.
+
+---
+
+30. NO PLACEHOLDERS
+
+Do not leave:
+
+- TODO placeholders;
+- fake implementations;
+- mock production behavior;
+- disabled security checks;
+- commented-out production gates;
+- hard-coded success responses;
+- fake evidence;
+- fake infrastructure results.
+
+Tests may use mocks where the existing test architecture explicitly requires them, but production behavior must remain real and secure.
+
+---
+
+31. NO TEST CHEATING
+
+Never modify tests simply to make broken implementation pass.
+
+Never:
+
+- delete failing tests;
+- weaken assertions;
+- skip tests;
+- mark failures as expected without architectural justification;
+- change production behavior solely to satisfy an incorrect shortcut.
+
+If implementation and contract disagree, first determine whether the implementation is wrong.
+
+---
+
+32. CLEANUP
+
+The final repository must contain no obsolete generated artifacts.
+
+Remove only artifacts proven to be obsolete.
+
+Do not delete source files merely because they are not referenced by the current test suite.
+
+The repository must remain organized and internally consistent.
+
+---
+
+33. FINAL VALIDATION
+
+Before declaring completion, verify all of the following:
+
+- repository structure valid;
+- canonical workflows present;
+- production release security contract present;
+- no obsolete bootstrap scripts;
+- no duplicate bootstrap system;
+- no direct production legacy persistence;
+- PostgreSQL production boundary intact;
+- security hardening intact;
+- staging certification intact;
+- release integrity intact;
+- Android contracts intact;
+- workflow actions SHA-pinned;
+- shell permissions valid;
+- backend tests pass;
+- contract tests pass;
+- architecture tests pass;
+- release/security tests pass;
+- workflow lint passes;
+- ZIP/archive validation passes if an archive is produced.
+
+---
+
+34. FAILURE POLICY
+
+If a test fails:
+
+1. identify the real root cause;
+2. inspect the relevant implementation and contract;
+3. fix the implementation safely;
+4. rerun the failed test;
+5. rerun the complete suite;
+6. do not hide or bypass the failure.
+
+If a failure is caused by unavailable infrastructure such as:
+
+- Docker;
+- PostgreSQL;
+- S3/R2;
+- external provider;
+- Android emulator/device;
+- Flutter toolchain;
+- staging URL;
+
+do NOT fabricate success.
+
+Clearly distinguish:
+
+"CODE FAILURE"
+
+from:
+
+"INFRASTRUCTURE / ENVIRONMENT BLOCKER"
+
+---
+
+35. GIT / GITHUB SAFETY
+
+Never force-push.
+
+Never rewrite repository history.
+
+Never delete branches or tags unless explicitly instructed.
+
+Never claim that a GitHub change was successfully pushed unless the GitHub operation actually succeeded.
+
+If GitHub write permission is unavailable, prepare the corrected project/archive locally and report the limitation honestly.
+
+---
+
+36. FINAL DELIVERABLE
+
+When all code-level work is complete:
+
+1. run the complete test suite;
+2. run workflow validation;
+3. validate archive integrity if creating an archive;
+4. produce a clean final project archive if requested;
+5. provide its SHA-256;
+6. report actual test results;
+7. explicitly distinguish code PASS from infrastructure blockers.
+
+The final project must remain compatible with the canonical HOPE V8 architecture.
+
+END OF CANONICAL HOPE V8 BOOTSTRAP INSTRUCTION
