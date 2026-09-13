@@ -3,902 +3,284 @@ name: HOPE-V8 Bootstrap
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     paths:
-      - "*.zip"
-      - "**/*.zip"
-      - ".github/workflows/bootstrap.yml"
+      - '*.zip'
+      - '.github/workflows/bootstrap.yml'
 
 permissions:
   contents: read
 
-concurrency:
-  group: hope-v8-bootstrap-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  bootstrap:
-    name: Bootstrap, validate and test
+  bootstrap-and-verify:
+    name: Bootstrap and Verify HOPE-V8
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      NODE_VERSION: "24"
-      FLUTTER_VERSION: "3.47.2"
-      CI: "true"
-      RUN_FULL_TEST: "0"
-      RUN_FLUTTER_BUILD: "0"
 
     steps:
-
-      # ============================================================
-      # 1. Checkout
-      # ============================================================
       - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      # ============================================================
-      # 2. Setup Node
-      #
-      # IMPORTANT:
-      # Do NOT enable npm cache here.
-      # The repository may initially contain only the ZIP and this
-      # workflow. backend/package-lock.json is discovered AFTER
-      # the ZIP is extracted.
-      # ============================================================
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # ============================================================
-      # 3. Setup Java
-      # ============================================================
-      - name: Setup Java
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # ============================================================
-      # 4. Setup Flutter
-      # ============================================================
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      # ============================================================
-      # 5. Toolchain diagnostics
-      # ============================================================
-      - name: Show toolchain
+      - name: Discover and safely extract project archive
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "========================================"
-          echo "HOPE-V8 TOOLCHAIN"
-          echo "========================================"
+          ROOT="$GITHUB_WORKSPACE"
+          TMP="$RUNNER_TEMP/hope-v8-bootstrap"
+          EXTRACT="$TMP/extracted"
 
-          node --version
-          npm --version
-          java -version
-          flutter --version
-          git --version
-          unzip -v | head -n 2
-          rsync --version | head -n 1
+          rm -rf "$TMP"
+          mkdir -p "$EXTRACT"
 
-      # ============================================================
-      # 6. Locate ZIP
-      # ============================================================
-      - name: Locate project ZIP
-        id: locate_zip
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "LOCATING HOPE PROJECT ZIP"
-          echo "========================================"
-
-          mapfile -d '' ZIPS < <(
-            find "$GITHUB_WORKSPACE" \
+          mapfile -t ZIPS < <(
+            find "$ROOT" \
+              -maxdepth 2 \
               -type f \
-              \( -iname "*.zip" -o -iname "*.ZIP" \) \
-              -not -path "*/.git/*" \
-              -not -path "*/node_modules/*" \
-              -print0
+              -iname '*.zip' \
+              -not -path '*/.git/*' \
+              | sort
           )
 
           if [ "${#ZIPS[@]}" -eq 0 ]; then
-            echo "::error::No ZIP archive was found in the repository."
+            echo 'No project ZIP found at repository root.' >&2
             exit 1
           fi
 
-          echo "ZIP candidates:"
-          for z in "${ZIPS[@]}"; do
-            echo " - $z"
-          done
+          mapfile -t HOPE_ZIPS < <(
+            printf '%s\n' "${ZIPS[@]}" |
+            grep -Ei '/(hope|v[0-9]+|release|final|source|build|session)[^/]*\.zip$' ||
+            true
+          )
 
-          SELECTED=""
+          if [ "${#HOPE_ZIPS[@]}" -gt 0 ]; then
+            ZIP="$(ls -1t "${HOPE_ZIPS[@]}" | head -n1)"
+          else
+            ZIP="$(ls -1t "${ZIPS[@]}" | head -n1)"
+          fi
 
-          # Prefer archives whose names strongly indicate the HOPE project.
-          for z in "${ZIPS[@]}"; do
-            base="$(basename "$z")"
-            lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+          echo "Using archive: $(basename "$ZIP")"
 
-            if [[ "$lower" == *hope* ||
-                  "$lower" == *v2hope* ||
-                  "$lower" == *v7* ||
-                  "$lower" == *v8* ||
-                  "$lower" == *final* ||
-                  "$lower" == *release* ||
-                  "$lower" == *source* ||
-                  "$lower" == *build* ||
-                  "$lower" == *session* ]]; then
+          while IFS= read -r entry; do
+            entry="${entry//\\//}"
 
-              SELECTED="$z"
-              break
-            fi
-          done
+            case "$entry" in
+              /*|../*|*/../*|*/..|.git|.git/*|*/.git/*|.github|.github/*|*/.github/*)
+                echo "Unsafe or controller-owned ZIP path: $entry" >&2
+                exit 1
+                ;;
+            esac
+          done < <(unzip -Z1 "$ZIP")
 
-          # Otherwise select the newest ZIP.
-          if [ -z "$SELECTED" ]; then
-            SELECTED="$(
-              find "$GITHUB_WORKSPACE" \
+          unzip -q "$ZIP" -d "$EXTRACT"
+
+          is_project_root() {
+            [ -f "$1/pubspec.yaml" ] &&
+            [ -f "$1/backend/package.json" ] &&
+            [ -d "$1/lib" ] &&
+            [ -d "$1/backend/src" ]
+          }
+
+          SRC=""
+
+          if is_project_root "$EXTRACT"; then
+            SRC="$EXTRACT"
+          else
+            while IFS= read -r pubspec; do
+              candidate="$(dirname "$pubspec")"
+
+              if is_project_root "$candidate"; then
+                SRC="$candidate"
+                break
+              fi
+            done < <(
+              find "$EXTRACT" \
+                -maxdepth 6 \
                 -type f \
-                \( -iname "*.zip" -o -iname "*.ZIP" \) \
-                -not -path "*/.git/*" \
-                -not -path "*/node_modules/*" \
-                -printf '%T@ %p\n' |
-              sort -nr |
-              head -n 1 |
-              cut -d' ' -f2-
-            )"
+                -name pubspec.yaml \
+                -print \
+                | sort
+            )
           fi
 
-          if [ -z "$SELECTED" ] || [ ! -f "$SELECTED" ]; then
-            echo "::error::Unable to select a project ZIP."
+          [ -n "$SRC" ] || {
+            echo 'No valid HOPE project root found in ZIP.' >&2
             exit 1
-          fi
+          }
 
-          echo
-          echo "SELECTED ZIP:"
-          echo "$SELECTED"
+          echo "Project root inside archive: ${SRC#$EXTRACT/}"
 
-          echo "zip=$SELECTED" >> "$GITHUB_OUTPUT"
+          # Bootstrap ownership is exclusively in GitHub.
+          # The project archive is never allowed to carry its own controller.
+          rm -rf \
+            "$ROOT/backend" \
+            "$ROOT/lib" \
+            "$ROOT/android" \
+            "$ROOT/ios" \
+            "$ROOT/web" \
+            "$ROOT/assets" \
+            "$ROOT/test" \
+            "$ROOT/integration_test" \
+            "$ROOT/tools" \
+            "$ROOT/docs"
 
-      # ============================================================
-      # 7. Validate ZIP
-      # ============================================================
-      - name: Validate ZIP safety and integrity
-        env:
-          ZIP_PATH: ${{ steps.locate_zip.outputs.zip }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          cp -a "$SRC/." "$ROOT/"
 
-          echo "========================================"
-          echo "ZIP VALIDATION"
-          echo "========================================"
+          # Never allow an imported archive to replace the GitHub controller.
+          rm -rf "$ROOT/.github"
 
-          echo "Testing ZIP integrity..."
+          echo 'PASS: project archive imported; GitHub remains the single bootstrap owner.'
 
-          if ! unzip -t "$ZIP_PATH" >/tmp/hope-zip-test.log 2>&1; then
-            cat /tmp/hope-zip-test.log
-            echo "::error::ZIP integrity test failed."
-            exit 1
-          fi
-
-          echo "ZIP integrity: PASS"
-
-          unzip -Z1 "$ZIP_PATH" > /tmp/hope-zip-files.txt
-
-          echo "Checking for path traversal..."
-
-          if grep -E '(^|/)\.\.(/|$)|^/|^[A-Za-z]:[\\/]' \
-            /tmp/hope-zip-files.txt; then
-
-            echo "::error::Unsafe path detected in ZIP."
-            exit 1
-          fi
-
-          echo "Path traversal check: PASS"
-
-          echo "Checking for embedded Git repository..."
-
-          if grep -E '(^|/)\.git(/|$)' \
-            /tmp/hope-zip-files.txt; then
-
-            echo "::error::ZIP contains .git content."
-            exit 1
-          fi
-
-          echo "Git content check: PASS"
-
-      # ============================================================
-      # 8. Extract ZIP and discover actual project root
-      # ============================================================
-      - name: Extract and discover project root
-        id: discover
-        env:
-          ZIP_PATH: ${{ steps.locate_zip.outputs.zip }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "EXTRACTING PROJECT"
-          echo "========================================"
-
-          WORK_DIR="$RUNNER_TEMP/hope-v8"
-          EXTRACT_DIR="$WORK_DIR/extracted"
-
-          rm -rf "$WORK_DIR"
-          mkdir -p "$EXTRACT_DIR"
-
-          unzip -q "$ZIP_PATH" -d "$EXTRACT_DIR"
-
-          echo
-          echo "Top extracted files:"
-          find "$EXTRACT_DIR" \
-            -maxdepth 4 \
-            -type f |
-            sort |
-            head -n 200
-
-          echo
-          echo "========================================"
-          echo "DISCOVERING REAL PROJECT ROOT"
-          echo "========================================"
-
-          CANDIDATES=()
-
-          while IFS= read -r -d '' PUBSPEC; do
-
-            CANDIDATE="$(dirname "$PUBSPEC")"
-
-            if [ -f "$CANDIDATE/backend/package.json" ] &&
-               [ -d "$CANDIDATE/backend/src" ] &&
-               [ -d "$CANDIDATE/lib" ]; then
-
-              CANDIDATES+=("$CANDIDATE")
-            fi
-
-          done < <(
-            find "$EXTRACT_DIR" \
-              -type f \
-              -name "pubspec.yaml" \
-              -print0
-          )
-
-          if [ "${#CANDIDATES[@]}" -eq 0 ]; then
-
-            echo "::error::No valid HOPE project root was found."
-
-            echo
-            echo "Expected project structure:"
-            echo "  pubspec.yaml"
-            echo "  lib/"
-            echo "  backend/package.json"
-            echo "  backend/package-lock.json"
-            echo "  backend/src/"
-
-            exit 1
-          fi
-
-          if [ "${#CANDIDATES[@]}" -gt 1 ]; then
-            echo "::warning::Multiple project roots detected:"
-            printf ' - %s\n' "${CANDIDATES[@]}"
-          fi
-
-          PROJECT_ROOT="${CANDIDATES[0]}"
-
-          echo
-          echo "SELECTED PROJECT ROOT:"
-          echo "$PROJECT_ROOT"
-
-          echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
-          echo "work_dir=$WORK_DIR" >> "$GITHUB_OUTPUT"
-
-      # ============================================================
-      # 9. Backup current repository
-      # ============================================================
-      - name: Backup current repository
-        env:
-          WORK_DIR: ${{ steps.discover.outputs.work_dir }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "BACKING UP CURRENT REPOSITORY"
-          echo "========================================"
-
-          BACKUP="$WORK_DIR/repository-backup"
-
-          rm -rf "$BACKUP"
-          mkdir -p "$BACKUP"
-
-          rsync -a \
-            --exclude=".git/" \
-            --exclude=".hope-bootstrap/" \
-            "$GITHUB_WORKSPACE/" \
-            "$BACKUP/"
-
-          echo "Backup created:"
-          echo "$BACKUP"
-
-      # ============================================================
-      # 10. Sync extracted project into repository root
-      # ============================================================
-      - name: Sync project into repository root
-        env:
-          PROJECT_ROOT: ${{ steps.discover.outputs.project_root }}
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "SYNCING PROJECT"
-          echo "========================================"
-
-          rsync -a \
-            --delete-delay \
-            --exclude=".git/" \
-            --exclude=".hope-bootstrap/" \
-            --exclude=".github/workflows/bootstrap.yml" \
-            "$PROJECT_ROOT/" \
-            "$GITHUB_WORKSPACE/"
-
-          echo "Project synchronization complete."
-
-      # ============================================================
-      # 11. Restore executable permissions
-      # ============================================================
-      - name: Restore executable permissions
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "RESTORING EXECUTABLE PERMISSIONS"
-          echo "========================================"
-
-          if [ -f "android/gradlew" ]; then
-            chmod +x android/gradlew
-            echo "PASS: android/gradlew"
-          fi
-
-          if [ -d "tools" ]; then
-            find tools \
-              -type f \
-              \( -name "*.sh" -o -name "*.bash" \) \
-              -exec chmod +x {} \; \
-              -print
-          fi
-
-          echo "Executable permission restoration complete."
-
-      # ============================================================
-      # 12. Validate final structure AFTER extraction
-      # ============================================================
-      - name: Validate final project structure
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FINAL STRUCTURE VALIDATION"
-          echo "========================================"
-
-          REQUIRED_ITEMS=(
-            "pubspec.yaml"
-            "lib"
-            "backend"
-            "backend/package.json"
-            "backend/package-lock.json"
-            "backend/src"
-          )
-
-          FAILED=0
-
-          for ITEM in "${REQUIRED_ITEMS[@]}"; do
-            if [ -e "$GITHUB_WORKSPACE/$ITEM" ]; then
-              echo "PASS: $ITEM"
-            else
-              echo "FAIL: $ITEM"
-              FAILED=1
-            fi
-          done
-
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::error::Required project structure is incomplete after extraction."
-            exit 1
-          fi
-
-          echo
-          echo "Project structure: PASS"
-
-      # ============================================================
-      # 13. Now enable npm cache, because lockfile exists
-      # ============================================================
-      - name: Configure npm cache
-        uses: actions/setup-node@v6
+      - name: Setup Node 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '24'
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      # ============================================================
-      # 14. Install backend dependencies
-      # ============================================================
-      - name: Install backend dependencies
-        working-directory: backend
+      - name: Setup Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Setup Flutter 3.47.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Validate repository structure
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "========================================"
-          echo "BACKEND DEPENDENCIES"
-          echo "========================================"
-
-          npm ci
-
-      # ============================================================
-      # 15. Backend syntax validation
-      # ============================================================
-      - name: Backend syntax validation
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "BACKEND SYNTAX VALIDATION"
-          echo "========================================"
-
-          FAILED=0
-
-          while IFS= read -r -d '' FILE; do
-
-            if ! node --check "$FILE" >/tmp/node-check.log 2>&1; then
-
-              echo "FAIL: $FILE"
-              cat /tmp/node-check.log
-
-              FAILED=1
-
-            else
-
-              echo "PASS: $FILE"
-
-            fi
-
-          done < <(
-            find backend/src \
-              -type f \
-              -name "*.js" \
-              -print0
+          required=(
+            pubspec.yaml
+            pubspec.lock
+            backend/package.json
+            backend/package-lock.json
+            lib
+            backend/src
+            tools/check-workflows.py
           )
 
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::error::Backend syntax validation failed."
+          for path in "${required[@]}"; do
+            test -e "$path" || {
+              echo "Missing required path: $path" >&2
+              exit 1
+            }
+          done
+
+          if find .github tools -maxdepth 2 -type f \
+            \( \
+              -name 'bootstrap.yml' \
+              -o -name '*bootstrap-v8*.sh' \
+              -o -name 'bootstrap-dependencies.sh' \
+            \) \
+            -print | grep -q .; then
+            echo 'Bootstrap duplication detected inside imported project.' >&2
             exit 1
           fi
 
-          echo
-          echo "Backend syntax: PASS"
+          python3 tools/check-workflows.py
 
-      # ============================================================
-      # 16. Persistence boundary
-      # ============================================================
-      - name: Persistence boundary audit
+          echo 'PASS: structure and workflow contracts'
+
+      - name: Backend dependency install and core syntax
+        working-directory: backend
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "========================================"
-          echo "PERSISTENCE BOUNDARY AUDIT"
-          echo "========================================"
+          npm ci --ignore-scripts
 
-          DIRECT_REFS="$(
+          node --check src/server.js
+          node --check src/app.js
+          node --check src/db.js
+
+          echo 'PASS: backend dependencies and core syntax'
+
+      - name: Persistence boundary
+        working-directory: backend
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          refs="$(
             grep -RInE \
-              '\b(db|database|firestore|firestoreDb)\.(collection|insert|update|touch|save)\b' \
-              backend/src/routes \
-              --include="*.js" \
-              2>/dev/null || true
+              --include='*.js' \
+              'db\.(collection|insert|update|touch|reset|save)' \
+              ../backend/src/routes \
+              2>/dev/null |
+            wc -l |
+            tr -d ' '
           )"
 
-          if [ -n "$DIRECT_REFS" ]; then
-
-            echo "$DIRECT_REFS"
-
-            echo "::error::Direct persistence access remains inside backend/src/routes."
-
+          [ "$refs" -eq 0 ] || {
+            echo "Route persistence boundary broken: $refs direct db refs" >&2
             exit 1
-          fi
+          }
 
-          echo "PASS: no direct persistence facade access in routes."
+          echo 'PASS: route persistence boundary = 0 direct db.* refs'
 
-      # ============================================================
-      # 17. Package sanity
-      # ============================================================
-      - name: Backend package validation
+      - name: Backend fast and architecture gates
         working-directory: backend
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          echo "========================================"
-          echo "BACKEND PACKAGE VALIDATION"
-          echo "========================================"
-
-          node <<'NODE'
-          const fs = require("fs");
-
-          const pkg = JSON.parse(
-            fs.readFileSync("package.json", "utf8")
-          );
-
-          if (!pkg.name) {
-            throw new Error("package.json is missing name");
-          }
-
-          if (!pkg.scripts) {
-            throw new Error("package.json is missing scripts");
-          }
-
-          console.log("Package:", pkg.name);
-          console.log(
-            "Scripts:",
-            Object.keys(pkg.scripts).sort().join(", ")
-          );
-          NODE
-
-      # ============================================================
-      # 18. Fast tests
-      # ============================================================
-      - name: Fast backend tests
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FAST BACKEND TESTS"
-          echo "========================================"
 
           npm run test:fast
-
-      # ============================================================
-      # 19. Contract tests
-      # ============================================================
-      - name: Application contract tests
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "APPLICATION CONTRACT TESTS"
-          echo "========================================"
-
           npm run test:contract
-
-      # ============================================================
-      # 20. Architecture layer tests
-      # ============================================================
-      - name: Architecture layer tests
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "ARCHITECTURE LAYER TESTS"
-          echo "========================================"
-
           npm run test:architecture-layers
 
-      # ============================================================
-      # 21. Targeted authentication/security tests
-      # ============================================================
-      - name: Targeted security and authentication tests
+      - name: Backend operational and product gates
         working-directory: backend
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "========================================"
-          echo "SECURITY / AUTH TESTS"
-          echo "========================================"
+          npm run test:backup
+          npm run test:staging-contract
+          npm run test:release-evidence
+          npm run test:payment-e2e
+          npm run test:notifications
+          npm run test:analytics
+          npm run test:wave10
+          npm run test:product
 
-          if npm run test:e2e -- --grep "auth|security" >/tmp/security-e2e.log 2>&1; then
-
-            cat /tmp/security-e2e.log
-
-          else
-
-            cat /tmp/security-e2e.log
-
-            echo "::warning::Targeted security/auth e2e tests are unavailable or failed in this CI environment."
-            echo "Environment-dependent e2e failure is recorded as diagnostic."
-
-          fi
-
-      # ============================================================
-      # 22. Full test suite - optional diagnostic
-      # ============================================================
-      - name: Full backend test suite
-        if: env.RUN_FULL_TEST == '1'
-        working-directory: backend
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FULL BACKEND TEST SUITE"
-          echo "========================================"
-
-          timeout 900 npm test
-
-      # ============================================================
-      # 23. NPM security audit
-      # ============================================================
-      - name: Backend dependency security audit
+      - name: Dependency audit
         working-directory: backend
         shell: bash
-        run: |
-          set -Eeuo pipefail
+        run: npm audit --audit-level=high
 
-          echo "========================================"
-          echo "NPM SECURITY AUDIT"
-          echo "========================================"
-
-          npm audit --audit-level=high
-
-      # ============================================================
-      # 24. Flutter dependency installation
-      # ============================================================
-      - name: Flutter dependency validation
+      - name: Flutter validation
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          echo "========================================"
-          echo "FLUTTER DEPENDENCIES"
-          echo "========================================"
+          version="$(
+            flutter --version |
+            sed -n '1s/Flutter \([^ ]*\).*/\1/p'
+          )"
 
-          flutter pub get
-
-          if [ ! -f "pubspec.lock" ]; then
-            echo "::error::pubspec.lock was not generated."
+          [ "$version" = '3.47.2' ] || {
+            echo "Flutter 3.47.2 required; found ${version:-unknown}" >&2
             exit 1
-          fi
-
-          echo "Flutter dependency setup: PASS"
-
-      # ============================================================
-      # 25. Flutter analyze
-      # ============================================================
-      - name: Flutter analyze
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FLUTTER ANALYZE"
-          echo "========================================"
-
-          flutter analyze
-
-      # ============================================================
-      # 26. Flutter tests
-      # ============================================================
-      - name: Flutter tests
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FLUTTER TESTS"
-          echo "========================================"
-
-          if [ -d "test" ]; then
-
-            flutter test
-
-          else
-
-            echo "No Flutter test directory found."
-            echo "Flutter tests skipped."
-
-          fi
-
-      # ============================================================
-      # 27. Flutter build - optional diagnostic
-      # ============================================================
-      - name: Flutter debug APK build
-        if: env.RUN_FLUTTER_BUILD == '1'
-        shell: bash
-        continue-on-error: true
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "FLUTTER DEBUG APK BUILD"
-          echo "========================================"
-
-          if [ -x "android/gradlew" ]; then
-
-            flutter build apk --debug
-
-          else
-
-            echo "::warning::android/gradlew is unavailable or not executable."
-
-          fi
-
-      # ============================================================
-      # 28. Repository hygiene
-      # ============================================================
-      - name: Repository hygiene audit
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo "========================================"
-          echo "REPOSITORY HYGIENE"
-          echo "========================================"
-
-          mkdir -p .hope-bootstrap
-
-          {
-            echo "Repository:"
-            echo "${GITHUB_REPOSITORY}"
-            echo
-
-            echo "Commit:"
-            echo "${GITHUB_SHA}"
-            echo
-
-            echo "Branch/ref:"
-            echo "${GITHUB_REF}"
-            echo
-
-            echo "Top-level entries:"
-            find . \
-              -maxdepth 1 \
-              -mindepth 1 \
-              -not -path "./.git" \
-              -not -path "./.hope-bootstrap" \
-              -printf "%f\n" |
-            sort
-
-            echo
-
-            echo "Generated/cache directories:"
-            find . \
-              -type d \
-              \( \
-                -name "node_modules" \
-                -o -name ".dart_tool" \
-                -o -name "build" \
-                -o -name "coverage" \
-                -o -name ".gradle" \
-              \) \
-              -not -path "./.git/*" \
-              -print |
-            sort |
-            head -n 200
-
-          } | tee .hope-bootstrap/hygiene-report.txt
-
-      # ============================================================
-      # 29. Generate machine-readable report
-      # ============================================================
-      - name: Generate bootstrap report
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p .hope-bootstrap
-
-          SELECTED_ZIP="${{ steps.locate_zip.outputs.zip }}"
-          PROJECT_ROOT="${{ steps.discover.outputs.project_root }}"
-
-          NODE_VERSION="$(node --version)"
-          FLUTTER_VERSION_ACTUAL="$(flutter --version | head -n 1)"
-          TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-
-          python3 - <<PY
-          import json
-
-          data = {
-              "workflow": "HOPE-V8 Bootstrap",
-              "repository": "${GITHUB_REPOSITORY}",
-              "commit": "${GITHUB_SHA}",
-              "ref": "${GITHUB_REF}",
-              "node": "${NODE_VERSION}",
-              "flutter": "${FLUTTER_VERSION_ACTUAL}",
-              "selected_zip": "${SELECTED_ZIP}",
-              "project_root": "${PROJECT_ROOT}",
-              "timestamp_utc": "${TIMESTAMP}"
           }
 
-          with open(".hope-bootstrap/bootstrap-summary.json", "w", encoding="utf-8") as f:
-              json.dump(data, f, indent=2, ensure_ascii=False)
-              f.write("\\n")
-          PY
+          flutter pub get --enforce-lockfile
+          flutter analyze
+          flutter test --no-pub
 
-          {
-            echo "========================================"
-            echo "HOPE-V8 BOOTSTRAP REPORT"
-            echo "========================================"
-            echo
-            cat .hope-bootstrap/bootstrap-summary.json
-            echo
-            echo "Core gates executed:"
-            echo "  [1] ZIP validation"
-            echo "  [2] Project root discovery"
-            echo "  [3] Structure validation"
-            echo "  [4] Backend npm ci"
-            echo "  [5] Backend syntax"
-            echo "  [6] Persistence boundary"
-            echo "  [7] test:fast"
-            echo "  [8] test:contract"
-            echo "  [9] test:architecture-layers"
-            echo "  [10] npm audit"
-            echo "  [11] Flutter pub get"
-            echo "  [12] Flutter analyze"
-            echo "  [13] Flutter tests"
-          } | tee .hope-bootstrap/bootstrap-report.txt
+          echo 'PASS: Flutter validation'
 
-      # ============================================================
-      # 30. Upload reports
-      # ============================================================
-      - name: Upload bootstrap reports
+      - name: Upload bootstrap report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: hope-v8-bootstrap-report
-          path: .hope-bootstrap/
-          if-no-files-found: warn
-          retention-days: 14
-
-      # ============================================================
-      # 31. Final status
-      # ============================================================
-      - name: Final status
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          echo
-          echo "========================================"
-          echo "HOPE-V8 BOOTSTRAP COMPLETE"
-          echo "========================================"
-          echo
-          echo "ZIP discovery: complete"
-          echo "ZIP extraction: complete"
-          echo "Project root discovery: complete"
-          echo "Repository synchronization: complete"
-          echo "Backend validation: complete"
-          echo "Persistence boundary audit: complete"
-          echo "Core backend tests: complete"
-          echo "Dependency audit: complete"
-          echo "Flutter validation stages: complete"
-          echo
-          echo "Bootstrap report:"
-          echo ".hope-bootstrap/bootstrap-report.txt"
-          echo
-          echo "HOPE-V8 BOOTSTRAP FINISHED"
+          path: |
+            backend/test-results/**
+            test-results/**
+          if-no-files-found: ignore
