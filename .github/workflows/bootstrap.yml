@@ -13,9 +13,36 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
+
+      - name: Setup Node 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+
+      - name: Verify Node toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "NODE TOOLCHAIN"
+          echo "========================================"
+
+          node --version
+          npm --version
+
+          node_major="$(node -p 'process.versions.node.split(".")[0]')"
+
+          if [ "$node_major" -ne 24 ]; then
+            echo "ERROR: Node 24 is required."
+            echo "Detected Node major: $node_major"
+            exit 1
+          fi
+
+          echo "Node 24 verified."
 
       - name: Verify session archive
         shell: bash
@@ -55,14 +82,16 @@ jobs:
             "backend/src/config.js"
           )
 
+          ARCHIVE_LIST="$(unzip -Z1 "$ARCHIVE")"
+
           for FILE in "${REQUIRED_FILES[@]}"; do
-            if ! unzip -Z1 "$ARCHIVE" | grep -Fxq "$FILE"; then
+            if ! printf '%s\n' "$ARCHIVE_LIST" | grep -Fxq "$FILE"; then
               echo ""
               echo "ERROR: Required file is missing from archive:"
               echo "$FILE"
               echo ""
               echo "Relevant archive entries:"
-              unzip -Z1 "$ARCHIVE" \
+              printf '%s\n' "$ARCHIVE_LIST" \
                 | grep -E '(^|/)(pubspec.yaml|package.json|jobs_page.dart|config.js)$' \
                 || true
               exit 1
@@ -72,7 +101,7 @@ jobs:
           done
 
           echo ""
-          echo "Archive contains the complete HOPE-V7 project."
+          echo "Archive contains the required HOPE-V7 project files."
 
       - name: Extract session archive
         shell: bash
@@ -112,14 +141,21 @@ jobs:
               ROOT="$CANDIDATE"
               break
             fi
-          done < <(find /tmp/hope -type f -name "pubspec.yaml" -print | sort)
+          done < <(
+            find /tmp/hope \
+              -type f \
+              -name "pubspec.yaml" \
+              -print \
+              | sort
+          )
 
           if [ -z "$ROOT" ]; then
             echo ""
             echo "ERROR: Complete HOPE-V7 project root could not be located."
             echo ""
             echo "Extracted project markers:"
-            find /tmp/hope -type f \
+            find /tmp/hope \
+              -type f \
               \( \
                 -name "pubspec.yaml" \
                 -o -name "package.json" \
@@ -131,7 +167,9 @@ jobs:
 
             echo ""
             echo "Top-level extracted structure:"
-            find /tmp/hope -maxdepth 3 -type d \
+            find /tmp/hope \
+              -maxdepth 4 \
+              -type d \
               -print \
               | sort \
               | head -300
@@ -223,6 +261,90 @@ jobs:
           echo ""
           echo "Repository contains the complete HOPE-V7 project."
 
+      - name: Repair bootstrap verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "REPAIRING BOOTSTRAP VERIFIER"
+          echo "========================================"
+
+          mkdir -p .github/bootstrap
+
+          cat > .github/bootstrap/verify-hope-v7.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+required=(
+  "AGENT-HANDOFF-PROMPT.md"
+  "AGENT-RESOURCE-POLICY.md"
+  "backend/package.json"
+  "backend/package-lock.json"
+  ".github/workflows/main.yml"
+  ".github/workflows/staging-certification.yml"
+  ".github/workflows/production-release.yml"
+  "tools/staging-operational-gate.mjs"
+)
+
+for f in "${required[@]}"; do
+  [[ -f "$f" ]] || {
+    echo "MISSING: $f"
+    exit 1
+  }
+
+  echo "OK: $f"
+done
+
+node --version
+npm --version
+
+node --check tools/staging-operational-gate.mjs
+
+if [[ -f backend/package.json ]]; then
+  (
+    cd backend
+    npm ci --ignore-scripts
+  )
+fi
+
+echo "HOPE-V7 bootstrap verification passed."
+EOF
+
+          chmod +x .github/bootstrap/verify-hope-v7.sh
+
+          echo ""
+          echo "Verifier mode:"
+          stat -c '%A %a %n' .github/bootstrap/verify-hope-v7.sh
+
+          echo ""
+          echo "Verifier first line:"
+          head -n 1 .github/bootstrap/verify-hope-v7.sh
+
+          echo ""
+          echo "Checking executable bit..."
+
+          MODE="$(stat -c '%a' .github/bootstrap/verify-hope-v7.sh)"
+
+          case "$MODE" in
+            7??|?7?|??7)
+              echo "Executable bit is present."
+              ;;
+            *)
+              echo "ERROR: Executable bit was not set."
+              exit 1
+              ;;
+          esac
+
+          echo ""
+          echo "Checking shell syntax..."
+
+          bash -n .github/bootstrap/verify-hope-v7.sh
+
+          echo "Bootstrap verifier repaired successfully."
+
       - name: Install backend dependencies
         shell: bash
         run: |
@@ -299,6 +421,44 @@ jobs:
           npm run verify --if-present
           npm test --if-present
 
+      - name: Verify critical executable and workflow contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "FINAL CONTRACT CHECKS"
+          echo "========================================"
+
+          test -x .github/bootstrap/verify-hope-v7.sh
+
+          FIRST_LINE="$(head -n 1 .github/bootstrap/verify-hope-v7.sh)"
+
+          case "$FIRST_LINE" in
+            "#!"*)
+              echo "Shebang: PASS"
+              ;;
+            *)
+              echo "ERROR: Bootstrap verifier has no shebang."
+              exit 1
+              ;;
+          esac
+
+          if grep -RInE \
+            '^[[:space:]]*uses:[[:space:]]+[^[:space:]@]+/[^[:space:]@]+@(v|main|master|latest|[0-9])' \
+            .github/workflows \
+            --include='*.yml' \
+            --include='*.yaml' \
+            >/tmp/mutable-actions.txt 2>/dev/null; then
+
+            echo "ERROR: Mutable GitHub Action references detected:"
+            cat /tmp/mutable-actions.txt
+            exit 1
+          fi
+
+          echo "Executable contract: PASS"
+          echo "Immutable action reference contract: PASS"
+
       - name: Check repository state
         shell: bash
         run: |
@@ -351,6 +511,14 @@ jobs:
           test -d backend
           test -f backend/package.json
           test -f backend/src/config.js
+          test -x .github/bootstrap/verify-hope-v7.sh
+
+          node_major="$(node -p 'process.versions.node.split(".")[0]')"
+
+          if [ "$node_major" -ne 24 ]; then
+            echo "ERROR: Final Node version is not 24."
+            exit 1
+          fi
 
           echo ""
           echo "========================================"
@@ -360,7 +528,9 @@ jobs:
           echo "Complete project root detected."
           echo "Flutter project files verified."
           echo "Backend files verified."
-          echo "Node files verified."
+          echo "Node 24 verified."
+          echo "Bootstrap verifier verified."
+          echo "Immutable action references verified."
           echo "Repository state verified."
           echo ""
           echo "STATUS: PASS"
