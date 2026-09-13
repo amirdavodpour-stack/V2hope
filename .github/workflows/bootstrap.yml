@@ -2,346 +2,800 @@ name: HOPE-V8 Bootstrap
 
 on:
   workflow_dispatch:
-
+    inputs:
+      confirm:
+        description: Type release to allow production release
+        required: false
+        default: none
   push:
-    paths:
-      - "*.zip"
-      - ".github/workflows/bootstrap.yml"
-      - ".github/workflows/*.yml"
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-concurrency:
-  group: hope-v8-bootstrap-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  bootstrap-and-verify:
+
+  # ============================================================
+  # 1. BOOTSTRAP / FULL VALIDATION
+  # ============================================================
+  bootstrap:
     name: Bootstrap and Verify HOPE-V8
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Discover and safely extract project archive
+      - name: Verify repository structure
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          shopt -s nullglob
-          archives=( *.zip )
-
-          if [ "${#archives[@]}" -eq 0 ]; then
-            echo "ERROR: No ZIP archive found."
-            exit 1
-          fi
-
-          archive=""
-
-          for candidate in "${archives[@]}"; do
-            if [[ "$candidate" == *HOPE* || "$candidate" == *hope* ]]; then
-              archive="$candidate"
-              break
-            fi
-          done
-
-          if [ -z "$archive" ]; then
-            archive="${archives[0]}"
-          fi
-
-          echo "Using archive: $archive"
-
-          rm -rf bootstrap-extracted
-          mkdir -p bootstrap-extracted
-
-          unzip -q "$archive" -d bootstrap-extracted
-
-          mapfile -t roots < <(
-            find bootstrap-extracted -type f -name pubspec.yaml -print |
-            while read -r pubspec; do
-              root="$(dirname "$pubspec")"
-
-              if [ -f "$root/backend/package.json" ] &&
-                 [ -d "$root/lib" ] &&
-                 [ -d "$root/backend/src" ]; then
-                printf '%s\n' "$root"
-              fi
-            done
+          required=(
+            pubspec.yaml
+            pubspec.lock
+            backend/package.json
+            backend/package-lock.json
+            lib
+            backend/src
+            tools/check-workflows.py
+            tools/verify-pubspec-lock-fresh.sh
+            tools/ci-android-toolchain.sh
+            tools/android-build-preflight.sh
+            tools/build_apk_debug.sh
+            tools/build_apk_release.sh
+            tools/runtime-certification-preflight.sh
+            backend/scripts/dr-restore-drill.sh
           )
 
-          if [ "${#roots[@]}" -ne 1 ]; then
-            echo "ERROR: Expected exactly one valid HOPE-V8 project root."
-            echo "Found ${#roots[@]} valid roots:"
-            printf '  %s\n' "${roots[@]:-<none>}"
-            exit 1
-          fi
-
-          PROJECT_ROOT="${roots[0]}"
-
-          test -f "$PROJECT_ROOT/pubspec.yaml"
-          test -f "$PROJECT_ROOT/backend/package.json"
-          test -d "$PROJECT_ROOT/lib"
-          test -d "$PROJECT_ROOT/backend/src"
-
-          echo "Project root: $PROJECT_ROOT"
-          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
-
-      - name: Verify canonical workflow set
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          required_workflows=(
-            ".github/workflows/bootstrap.yml"
-            ".github/workflows/main.yml"
-            ".github/workflows/device-integration.yml"
-            ".github/workflows/staging-certification.yml"
-            ".github/workflows/production-release.yml"
-            ".github/workflows/final-build-bootstrap.yml"
-          )
-
-          for workflow in "${required_workflows[@]}"; do
-            if [ ! -f "$workflow" ]; then
-              echo "ERROR: Missing required workflow: $workflow"
+          for path in "${required[@]}"; do
+            test -e "$path" || {
+              echo "ERROR: Missing required path: $path" >&2
               exit 1
-            fi
+            }
           done
 
-          echo "All canonical workflows are present."
-
-      - name: Verify production workflow secret contract
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          production_workflow=".github/workflows/production-release.yml"
-
-          required_secrets=(
-            "DATABASE_URL_PRODUCTION"
-            "S3_BUCKET_PRODUCTION"
-            "S3_REGION_PRODUCTION"
-            "PUBLIC_BASE_URL"
-            "ACCESS_TOKEN_SECRET_PRODUCTION"
-            "REFRESH_TOKEN_SECRET_PRODUCTION"
-            "METRICS_TOKEN_PRODUCTION"
-            "PAYMENT_WEBHOOK_SECRET_PRODUCTION"
-            "PAYMENT_PROVIDER_TOKEN_PRODUCTION"
-            "PAYMENT_PROVIDER_CREATE_URL_PRODUCTION"
-            "PAYMENT_PROVIDER_RELEASE_URL_PRODUCTION"
-            "PAYMENT_PROVIDER_REFUND_URL_PRODUCTION"
-            "ALLOWED_CORS_ORIGINS_PRODUCTION"
-            "RESET_TOKEN_DELIVERY_URL_PRODUCTION"
-            "RESET_TOKEN_DELIVERY_SECRET_PRODUCTION"
-            "ANDROID_RELEASE_KEYSTORE_B64"
-            "ANDROID_RELEASE_KEYSTORE_PASSWORD"
-            "ANDROID_RELEASE_KEY_ALIAS"
-            "ANDROID_RELEASE_KEY_PASSWORD"
-          )
-
-          for secret_name in "${required_secrets[@]}"; do
-            if ! grep -q "$secret_name" "$production_workflow"; then
-              echo "ERROR: Production workflow does not reference required secret: $secret_name"
-              exit 1
-            fi
-          done
-
-          echo "Production secret contract OK."
-
-      - name: Verify bootstrap does not dynamically call staging certification
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          if grep -Eq \
-            '^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/staging-certification\.yml' \
-            .github/workflows/bootstrap.yml; then
-            echo "ERROR: bootstrap.yml must not call staging-certification.yml."
-            echo "Bootstrap cannot dynamically extend GitHub's workflow graph."
+          test -x android/gradlew || {
+            echo "ERROR: android/gradlew must be executable" >&2
             exit 1
-          fi
-
-          echo "Bootstrap workflow graph is self-contained."
-
-      - name: Install Node.js 24
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: "${{ env.PROJECT_ROOT }}/backend/package-lock.json"
-
-      - name: Install Java 17
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Install Flutter 3.47.2
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: "3.47.2"
-          channel: stable
-          cache: true
-
-      - name: Validate imported repository structure
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          test -f pubspec.yaml
-          test -f pubspec.lock
-          test -f backend/package.json
-          test -f backend/package-lock.json
-          test -d backend/src
-          test -d backend/tests
-          test -d lib
-          test -d android
-          test -d tools
-
-          echo "Repository structure OK."
-
-      - name: Validate workflow references and security contracts
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$PROJECT_ROOT"
-
-          test -f tools/check-workflows.py
+          }
 
           python3 tools/check-workflows.py
 
-      - name: Verify executable permissions
+          echo "PASS: repository structure and workflow contract."
+
+      - name: Verify shell executable permissions
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          cd "$PROJECT_ROOT"
+          bad=0
 
-          failures=0
-
-          while IFS= read -r -d '' script; do
-            if [ ! -x "$script" ]; then
-              echo "Missing executable bit: $script"
-              failures=1
+          while IFS= read -r -d '' file; do
+            if [ ! -x "$file" ]; then
+              echo "Not executable: $file" >&2
+              bad=1
             fi
-          done < <(find . -type f -name "*.sh" -print0)
+          done < <(
+            find . \
+              -type f \
+              -name '*.sh' \
+              -not -path './.git/*' \
+              -print0
+          )
 
-          if [ -f android/gradlew ] && [ ! -x android/gradlew ]; then
-            echo "Missing executable bit: android/gradlew"
-            failures=1
-          fi
+          [ "$bad" -eq 0 ] || exit 1
 
-          if [ "$failures" -ne 0 ]; then
-            echo
-            echo "ERROR: Executable permission contract failed."
-            echo "Repackage the project with POSIX executable bits preserved."
-            exit 1
-          fi
+          echo "PASS: all shell scripts are executable."
 
-          echo "Executable permissions OK."
+      - name: Setup Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
 
-      - name: Install backend dependencies
-        working-directory: ${{ env.PROJECT_ROOT }}/backend
+      - name: Setup Java 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Setup Flutter 3.47.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Backend dependency install and syntax
+        working-directory: backend
         shell: bash
         run: |
-          set -euo pipefail
-          npm ci
-
-      - name: Backend core syntax check
-        working-directory: ${{ env.PROJECT_ROOT }}/backend
-        shell: bash
-        run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          npm ci --ignore-scripts
           npm run check
 
-      - name: Backend persistence boundary
-        working-directory: ${{ env.PROJECT_ROOT }}/backend
+      - name: Persistence boundary
+        working-directory: backend
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          npm run test:contract -- \
-            tests/persistence-boundary.test.mjs
+          report="$RUNNER_TEMP/hope-route-db-refs.txt"
+          : > "$report"
 
-      - name: Backend fast and architecture gates
-        working-directory: ${{ env.PROJECT_ROOT }}/backend
+          set +e
+          grep -RInE \
+            --include='*.js' \
+            'db\.(collection|insert|update|touch|reset|save)' \
+            src/routes > "$report" 2>/dev/null
+          status=$?
+          set -e
+
+          [ "$status" -le 1 ] || exit "$status"
+
+          refs="$(wc -l < "$report" | tr -d ' ')"
+
+          [ "$refs" -eq 0 ] || {
+            cat "$report" >&2
+            exit 1
+          }
+
+          echo "PASS: route persistence boundary."
+
+      - name: Backend complete test gates
+        working-directory: backend
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
           npm run test:fast
+          npm run test:contract
           npm run test:architecture-layers
-
-      - name: Backend production contract
-        working-directory: ${{ env.PROJECT_ROOT }}/backend
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          npm run test:production-env
+          npm run test:backup
+          npm run test:staging-contract
           npm run test:release-evidence
-          npm run check:toolchain-contract
+          npm run test:payment-e2e
+          npm run test:notifications
+          npm run test:analytics
+          npm run test:wave10
+          npm run test:product
 
-      - name: Flutter lock freshness
-        working-directory: ${{ env.PROJECT_ROOT }}
+      - name: Backend dependency audit
+        working-directory: backend
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          npm audit --audit-level=high
+
+      - name: Flutter complete test gates
+        shell: bash
+        run: |
+          set -Eeuo pipefail
 
           flutter pub get --enforce-lockfile
-
-          git diff --exit-code -- pubspec.lock
-
-      - name: Flutter analyze
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
+          bash tools/verify-pubspec-lock-fresh.sh
           flutter analyze
+          flutter test --no-pub
 
-      - name: Flutter full test suite
-        working-directory: ${{ env.PROJECT_ROOT }}
+          echo "PASS: Flutter validation."
+
+      - name: Bootstrap summary
         shell: bash
         run: |
-          set -euo pipefail
+          echo "=============================================="
+          echo "HOPE-V8 BOOTSTRAP PASSED"
+          echo "Commit: $GITHUB_SHA"
+          echo "Ref:    $GITHUB_REF"
+          echo "=============================================="
 
-          flutter test
 
-      - name: Final bootstrap verification
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          set -euo pipefail
+  # ============================================================
+  # 2. STAGING CERTIFICATION
+  # ============================================================
+  staging-certification:
+    name: Staging Certification
+    needs: bootstrap
 
-          echo "PASS: validated project and canonical CI/CD imported safely."
-          echo "PASS: bootstrap does not dynamically invoke reusable workflows."
-          echo "PASS: workflow references and executable permissions validated."
-          echo "PASS: backend syntax, persistence, architecture, and production contracts validated."
-          echo "PASS: Flutter lock, analyze, and full test suite validated."
-          echo
-          echo "The final production build is launched by:"
-          echo ".github/workflows/final-build-bootstrap.yml"
+    if: ${{ needs.bootstrap.result == 'success' }}
 
-      - name: Upload bootstrap verification report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      minio:
+        image: minio/minio
+        ports:
+          - 9000:9000
+        command: server /data
+
+    outputs:
+      certification_status: ${{ steps.emit_status.outputs.status }}
+      certification_sha: ${{ github.sha }}
+      certification_attempt: ${{ github.run_attempt }}
+      certification_run_id: ${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Resource capacity guard
+        run: bash tools/ci-resource-guard.sh
+
+      - name: Setup Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          name: hope-v8-bootstrap-report
-          path: |
-            ${{ env.PROJECT_ROOT }}/test-results/**
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Setup Java 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Setup Flutter 3.47.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Provision Android CI toolchain
+        run: bash tools/ci-android-toolchain.sh
+
+      - name: Runtime certification preflight
+        working-directory: backend
+        run: bash ../tools/runtime-certification-preflight.sh
+
+      - name: Backend install
+        working-directory: backend
+        run: npm ci
+
+      - name: Flutter dependencies
+        run: flutter pub get
+
+      - name: Verify pubspec lock freshness
+        run: bash tools/verify-pubspec-lock-fresh.sh
+
+      - name: Flutter unit tests
+        run: flutter test --no-pub
+
+      - name: Postgres runtime probe
+        id: postgres_probe
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          REQUIRE_INTEGRATION: '1'
+        run: npm run test:postgres
+
+      - name: S3 runtime probe
+        id: s3_probe
+        working-directory: backend
+        env:
+          S3_ENDPOINT: http://127.0.0.1:9000
+          S3_REQUIRE_HTTPS: '0'
+        run: |
+          S3_INTEGRATION=1 npm run test:s3
+
+      - name: Staging performance smoke
+        id: perf_probe
+        working-directory: backend
+        env:
+          PERF_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          PERF_REQUESTS: '500'
+          PERF_CONCURRENCY: '50'
+          PERF_P95_BUDGET_MS: '500'
+          PERF_P99_BUDGET_MS: '1000'
+          PERF_MAX_5XX_RATE: '0.01'
+        run: |
+          node tools/perf-smoke.mjs
+          test -s perf-smoke.json
+
+      - name: Staging product workflow
+        id: product_workflow
+        working-directory: backend
+        env:
+          STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+        run: |
+          node ../tools/staging-product-smoke.mjs
+
+      - name: Staging external integration gate
+        id: provider_integration
+        working-directory: backend
+        run: npm run test:provider
+
+      - name: Probe notification delivery
+        id: notification_delivery
+        if: >-
+          env.NOTIFICATION_PROVIDER_TOKEN != '' &&
+          (
+            env.NOTIFICATION_PUSH_URL != '' ||
+            env.NOTIFICATION_EMAIL_URL != ''
+          )
+        working-directory: backend
+        env:
+          NOTIFICATION_PUSH_URL: ${{ secrets.NOTIFICATION_PUSH_URL }}
+          NOTIFICATION_EMAIL_URL: ${{ secrets.NOTIFICATION_EMAIL_URL }}
+          NOTIFICATION_PROVIDER_TOKEN: ${{ secrets.NOTIFICATION_PROVIDER_TOKEN }}
+        run: |
+          set -o pipefail
+          node ../tools/staging-notification-delivery.mjs \
+            | tee "$RUNNER_TEMP/staging-notification-delivery.log"
+
+      - name: Android quality gates
+        timeout-minutes: 30
+        env:
+          API_BASE_URL: https://staging.api.hope.app
+          BUILD_PROFILE: pilot
+        run: bash tools/build_apk_debug.sh
+
+      - name: Android emulator certification
+        id: device_certification
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          script: flutter test --no-pub integration_test
+        env:
+          API_BASE_URL_STAGING: https://staging.api.hope.app
+          CI_DEVICE_INTEGRATION: 'true'
+
+      - name: DR restore drill
+        id: dr_drill
+        working-directory: backend
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_WORK_DIR: /tmp/hope-dr-drill
+          DRILL_EVIDENCE_FILE: /tmp/hope-dr-drill/dr-restore-evidence.json
+        run: |
+          bash scripts/dr-restore-drill.sh
+          test -s "$DRILL_EVIDENCE_FILE"
+
+      - name: Runtime gate - postgres
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate postgres_runtime \
+            --result "${{ steps.postgres_probe.outcome == 'success' && 'pass' || 'fail' }}"
+
+      - name: Runtime gate - s3
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate s3_runtime \
+            --result "${{ steps.s3_probe.outcome == 'success' && 'pass' || 'fail' }}"
+
+      - name: Runtime gate - perf
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate perf_run \
+            --result "${{ steps.perf_probe.outcome == 'success' && 'pass' || 'fail' }}"
+
+      - name: Runtime gate - device
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate device_certification \
+            --result "${{ steps.device_certification.outcome == 'success' && 'pass' || 'fail' }}"
+
+      - name: Runtime gate - DR
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate dr_restore \
+            --result "${{ steps.dr_drill.outcome == 'success' && 'pass' || 'fail' }}"
+
+      - name: Runtime gate - provider
+        if: ${{ always() && steps.notification_delivery.conclusion != 'skipped' }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate provider_runtime \
+            --result "${{
+              (
+                steps.product_workflow.outcome == 'success' &&
+                steps.notification_delivery.outcome == 'success'
+              ) && 'pass' || 'fail'
+            }}"
+
+      - name: Upload staging certification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-certification-evidence
+          path: ${{ runner.temp }}
           if-no-files-found: ignore
-          retention-days: 14
+
+      - name: Emit certification status
+        id: emit_status
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          status=fail
+
+          if \
+            [ "${{ steps.postgres_probe.outcome }}" = "success" ] &&
+            [ "${{ steps.s3_probe.outcome }}" = "success" ] &&
+            [ "${{ steps.perf_probe.outcome }}" = "success" ] &&
+            [ "${{ steps.product_workflow.outcome }}" = "success" ] &&
+            [ "${{ steps.provider_integration.outcome }}" = "success" ] &&
+            [ "${{ steps.device_certification.outcome }}" = "success" ] &&
+            [ "${{ steps.dr_drill.outcome }}" = "success" ] &&
+            (
+              [ "${{ steps.notification_delivery.outcome }}" = "success" ] ||
+              [ "${{ steps.notification_delivery.outcome }}" = "skipped" ]
+            )
+          then
+            status=pass
+          fi
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          echo "Certification status: $status"
+
+
+  # ============================================================
+  # 3. PRODUCTION RELEASE
+  # ============================================================
+  production-release:
+    name: Production Release
+    needs:
+      - bootstrap
+      - staging-certification
+
+    if: >-
+      ${{
+        (
+          needs.staging-certification.outputs.certification_status == 'pass' ||
+          needs.staging-certification.outputs.certification_status == 'PASS'
+        ) &&
+        github.ref_type == 'tag' &&
+        inputs.confirm == 'release'
+      }}
+
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Require explicit release confirmation
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -Eeuo pipefail
+
+          [ "${CONFIRM:-none}" = "release" ] || {
+            echo "RELEASE confirmation required; refusing to publish." >&2
+            exit 1
+          }
+
+      - name: Verify staging certification commit
+        env:
+          CERT_SHA: ${{ needs.staging-certification.outputs.certification_sha }}
+        run: |
+          set -Eeuo pipefail
+
+          [ "$CERT_SHA" = "$GITHUB_SHA" ] || {
+            echo "Certified staging commit does not match release commit." >&2
+            echo "Certified: $CERT_SHA" >&2
+            echo "Release:   $GITHUB_SHA" >&2
+            exit 1
+          }
+
+      - name: Enforce immutable release tag
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [ "${GITHUB_REF_TYPE:-}" = "tag" ] || {
+            echo "Production release must run from an immutable version tag." >&2
+            exit 1
+          }
+
+          TAG="${GITHUB_REF#refs/tags/}"
+
+          VERSION="$(
+            awk '/^version:/ {print $2; exit}' pubspec.yaml
+          )"
+
+          [ "$TAG" = "v$VERSION" ] || {
+            echo "Release tag $TAG does not match application version v$VERSION" >&2
+            exit 1
+          }
+
+          git fetch --tags --force origin "$TAG"
+
+          TAG_SHA="$(
+            git rev-list -n 1 "refs/tags/$TAG"
+          )"
+
+          [ "$TAG_SHA" = "$GITHUB_SHA" ] || {
+            echo "Tag must resolve exactly to the checked-out release commit." >&2
+            exit 1
+          }
+
+      - name: Setup Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Setup Java 17
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Setup Flutter 3.47.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+
+      - name: Validate production environment contract
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_PRODUCTION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET_PRODUCTION }}
+          S3_REGION: ${{ secrets.S3_REGION_PRODUCTION }}
+          STORAGE_BACKEND: s3
+          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
+          PAYMENT_PROVIDER: webhook
+
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET_PRODUCTION }}
+          REFRESH_TOKEN_SECRET: ${{ secrets.REFRESH_TOKEN_SECRET_PRODUCTION }}
+          METRICS_TOKEN: ${{ secrets.METRICS_TOKEN_PRODUCTION }}
+
+          PAYMENT_WEBHOOK_SECRET: ${{ secrets.PAYMENT_WEBHOOK_SECRET_PRODUCTION }}
+          PAYMENT_PROVIDER_TOKEN: ${{ secrets.PAYMENT_PROVIDER_TOKEN_PRODUCTION }}
+          PAYMENT_PROVIDER_CREATE_URL: ${{ secrets.PAYMENT_PROVIDER_CREATE_URL_PRODUCTION }}
+          PAYMENT_PROVIDER_RELEASE_URL: ${{ secrets.PAYMENT_PROVIDER_RELEASE_URL_PRODUCTION }}
+          PAYMENT_PROVIDER_REFUND_URL: ${{ secrets.PAYMENT_PROVIDER_REFUND_URL_PRODUCTION }}
+
+          ALLOWED_CORS_ORIGINS: ${{ secrets.ALLOWED_CORS_ORIGINS_PRODUCTION }}
+
+          RESET_TOKEN_DELIVERY_MODE: webhook
+          RESET_TOKEN_DELIVERY_URL: ${{ secrets.RESET_TOKEN_DELIVERY_URL_PRODUCTION }}
+          RESET_TOKEN_DELIVERY_SECRET: ${{ secrets.RESET_TOKEN_DELIVERY_SECRET_PRODUCTION }}
+
+        run: bash scripts/validate-production-env.sh
+
+      - name: Backend install
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate SBOM
+        working-directory: backend
+        run: npm run sbom
+
+      - name: Backend quality gates
+        working-directory: backend
+        run: npm run check:all
+
+      - name: Production dependency audit
+        working-directory: backend
+        run: npm audit --audit-level=high
+
+      - name: Provision Android CI toolchain
+        run: bash tools/ci-android-toolchain.sh
+
+      - name: Android build preflight
+        run: bash tools/android-build-preflight.sh
+
+      - name: Flutter static and test gate
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          flutter pub get --enforce-lockfile
+          flutter analyze
+          flutter test --no-pub
+
+      - name: Verify pubspec lock freshness
+        run: bash tools/verify-pubspec-lock-fresh.sh
+
+      - name: Build production backend image
+        working-directory: backend
+        run: |
+          docker build \
+            --pull \
+            --file Dockerfile \
+            --tag "hope-api:${GITHUB_SHA}" \
+            .
+
+      - name: Capture backend image identity
+        id: backend_image
+        working-directory: backend
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          IMAGE="hope-api:${GITHUB_SHA}"
+
+          IMAGE_ID="$(
+            docker image inspect \
+              --format '{{.Id}}' \
+              "$IMAGE"
+          )"
+
+          test -n "$IMAGE_ID"
+
+          echo "image_id=$IMAGE_ID" >> "$GITHUB_OUTPUT"
+          echo "image_ref=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Configure production keystore
+        env:
+          ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ runner.temp }}/keystore.jks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          [ -n "${ANDROID_RELEASE_KEYSTORE_B64:-}" ] || {
+            echo "Missing Android release keystore secret." >&2
+            exit 1
+          }
+
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_B64" |
+            base64 --decode > "$KEYSTORE_PATH"
+
+          test -s "$KEYSTORE_PATH"
+
+          chmod 600 "$KEYSTORE_PATH"
+
+          test -n "${ANDROID_RELEASE_STORE_PASSWORD:-}"
+          test -n "${ANDROID_RELEASE_KEY_ALIAS:-}"
+          test -n "${ANDROID_RELEASE_KEY_PASSWORD:-}"
+
+      - name: Build signed production APK
+        id: release_build
+        timeout-minutes: 30
+        env:
+          BUILD_PROFILE: production
+          API_BASE_URL: ${{ secrets.API_BASE_URL_PRODUCTION }}
+          ANDROID_RELEASE_STORE_FILE: ${{ runner.temp }}/keystore.jks
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: bash tools/build_apk_release.sh
+
+      - name: Verify signed production APK
+        id: apk_verify
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          VERSION="$(
+            awk '/^version:/ {print $2; exit}' pubspec.yaml
+          )"
+
+          CANONICAL="artifacts/HOPE-${VERSION}-production.apk"
+
+          test -s "$CANONICAL"
+
+          apksigner verify --verbose "$CANONICAL"
+
+          sha256sum "$CANONICAL" > "${CANONICAL}.sha256"
+
+      - name: Runtime gate - android build
+        if: ${{ always() }}
+        working-directory: backend
+        run: |
+          node tools/write-evidence.mjs \
+            --gate android_build \
+            --result "${{
+              steps.apk_verify.outcome == 'success'
+              && 'pass' || 'fail'
+            }}"
+
+      - name: Resolve canonical release artifact
+        id: artifact_meta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          VERSION="$(
+            awk '/^version:/ {print $2; exit}' pubspec.yaml
+          )"
+
+          APK="artifacts/HOPE-${VERSION}-production.apk"
+
+          test -s "$APK"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+
+      - name: Generate attestation for release APK
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.artifact_meta.outputs.apk }}
+
+      - name: Publish release manifest
+        working-directory: backend
+        env:
+          BUILD_PROFILE: production
+          APK_PATH: ${{ steps.artifact_meta.outputs.apk }}
+
+          STAGING_CERTIFICATION_STATUS: PASS
+          STAGING_CERTIFICATION_RUN_ID: ${{ needs.staging-certification.outputs.certification_run_id }}
+          STAGING_CERTIFICATION_SHA: ${{ needs.staging-certification.outputs.certification_sha }}
+          STAGING_CERTIFICATION_ATTEMPT: ${{ needs.staging-certification.outputs.certification_attempt }}
+
+          BACKEND_IMAGE_ID: ${{ steps.backend_image.outputs.image_id }}
+          BACKEND_IMAGE_REF: ${{ steps.backend_image.outputs.image_ref }}
+
+        run: |
+          set -Eeuo pipefail
+
+          npm run release:manifest
+
+          test -s release-manifest.json
+
+          cp release-manifest.json \
+            "$RUNNER_TEMP/release-manifest.json"
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hope-release
+          path: |
+            ${{ steps.artifact_meta.outputs.apk }}
+            ${{ steps.artifact_meta.outputs.apk }}.sha256
+            artifacts/SHA256SUMS.txt
+            backend/release-manifest.json
+            backend/sbom.json
+          if-no-files-found: error
+
+      - name: Clean up production keystore
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f -- "$RUNNER_TEMP/keystore.jks"
