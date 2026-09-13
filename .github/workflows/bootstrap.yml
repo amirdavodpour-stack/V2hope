@@ -26,7 +26,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac465f34f1872e81e9c9c0c9e1b4a3f5f7a0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Discover and safely extract project archive
         shell: bash
@@ -43,18 +43,16 @@ jobs:
           fi
 
           archive=""
+
           for candidate in "${archives[@]}"; do
-            case "$candidate" in
-              *HOPE*|*hope*|*.zip)
-                archive="$candidate"
-                break
-                ;;
-            esac
+            if [[ "$candidate" == *HOPE* || "$candidate" == *hope* ]]; then
+              archive="$candidate"
+              break
+            fi
           done
 
           if [ -z "$archive" ]; then
-            echo "Unable to determine project archive."
-            exit 1
+            archive="${archives[0]}"
           fi
 
           echo "Using archive: $archive"
@@ -86,25 +84,10 @@ jobs:
 
           PROJECT_ROOT="${roots[0]}"
 
-          if [ ! -f "$PROJECT_ROOT/pubspec.yaml" ]; then
-            echo "Missing pubspec.yaml."
-            exit 1
-          fi
-
-          if [ ! -f "$PROJECT_ROOT/backend/package.json" ]; then
-            echo "Missing backend/package.json."
-            exit 1
-          fi
-
-          if [ ! -d "$PROJECT_ROOT/lib" ]; then
-            echo "Missing lib directory."
-            exit 1
-          fi
-
-          if [ ! -d "$PROJECT_ROOT/backend/src" ]; then
-            echo "Missing backend/src directory."
-            exit 1
-          fi
+          test -f "$PROJECT_ROOT/pubspec.yaml"
+          test -f "$PROJECT_ROOT/backend/package.json"
+          test -d "$PROJECT_ROOT/lib"
+          test -d "$PROJECT_ROOT/backend/src"
 
           echo "Project root: $PROJECT_ROOT"
           echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
@@ -174,37 +157,38 @@ jobs:
 
           echo "Production secret contract OK."
 
-      - name: Verify bootstrap does not call staging certification dynamically
+      - name: Verify bootstrap does not dynamically call staging certification
         shell: bash
         run: |
           set -euo pipefail
 
           cd "$PROJECT_ROOT"
 
-          if grep -Eq '^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/staging-certification\.yml' \
+          if grep -Eq \
+            '^[[:space:]]*uses:[[:space:]]*\./\.github/workflows/staging-certification\.yml' \
             .github/workflows/bootstrap.yml; then
             echo "ERROR: bootstrap.yml must not call staging-certification.yml."
-            echo "Bootstrap runs before imported workflow files can become part of GitHub's workflow graph."
+            echo "Bootstrap validates/imports the project; it does not dynamically extend GitHub's workflow graph."
             exit 1
           fi
 
           echo "Bootstrap workflow graph is self-contained."
 
       - name: Install Node.js 24
-        uses: actions/setup-node@1e60f620b9541dca8c6b7b9b6f4c7a0b5c2c4a7d
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: "${{ env.PROJECT_ROOT }}/backend/package-lock.json"
 
       - name: Install Java 17
-        uses: actions/setup-java@19c68a4c6f6f5f5f7f5a0f9c8b7d6e5f4a3b2c1d
+        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Install Flutter 3.47.2
-        uses: subosito/flutter-action@fd8f0f8b9f6c2e3d4a5b6c7d8e9f0a1b2c3d4e5f
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b
         with:
           flutter-version: "3.47.2"
           channel: stable
@@ -236,10 +220,7 @@ jobs:
 
           cd "$PROJECT_ROOT"
 
-          if [ ! -f tools/check-workflows.py ]; then
-            echo "Missing tools/check-workflows.py"
-            exit 1
-          fi
+          test -f tools/check-workflows.py
 
           python3 tools/check-workflows.py
 
@@ -353,17 +334,12 @@ jobs:
           echo "PASS: backend syntax, persistence, architecture, and production contracts validated."
           echo "PASS: Flutter lock, analyze, and full test suite validated."
           echo
-          echo "IMPORTANT:"
-          echo "The final production build must be launched by"
+          echo "The final production build is launched by:"
           echo ".github/workflows/final-build-bootstrap.yml"
-          echo "after these workflows are committed to the repository:"
-          echo "  - staging-certification.yml"
-          echo "  - production-release.yml"
-          echo "  - final-build-bootstrap.yml"
 
       - name: Upload bootstrap verification report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
           name: hope-v8-bootstrap-report
           path: |
