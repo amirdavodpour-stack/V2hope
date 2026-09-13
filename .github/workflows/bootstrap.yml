@@ -59,7 +59,7 @@ jobs:
 
           echo "Using archive: $(basename "$ZIP")"
 
-          # Reject path traversal and repository metadata only.
+          # Reject path traversal and repository metadata.
           # .github is allowed in an archive, but is NEVER imported.
           while IFS= read -r entry; do
             entry="${entry//\\//}"
@@ -124,7 +124,7 @@ jobs:
             "$ROOT/docs"
 
           # Import project contents while explicitly excluding .github.
-          # This makes GitHub the single source of truth for workflows.
+          # GitHub remains the single source of truth for workflows.
           for item in \
             "$SRC"/* \
             "$SRC"/.[!.]* \
@@ -189,7 +189,7 @@ jobs:
           done
 
           # There must be exactly one Bootstrap controller:
-          # the one already committed under .github/workflows.
+          # the one committed under .github/workflows.
           test -f .github/workflows/bootstrap.yml || {
             echo 'Missing GitHub Bootstrap controller.' >&2
             exit 1
@@ -300,7 +300,7 @@ jobs:
 
       - name: Upload bootstrap report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hope-v8-bootstrap-report
           path: |
