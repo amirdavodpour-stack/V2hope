@@ -140,7 +140,398 @@ jobs:
             cp -a "$item" "$ROOT/"
           done
 
-          echo 'PASS: project imported; GitHub controller preserved.'
+          echo 'PASS: project imported.'
+
+      - name: Create canonical project workflows
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          WORKFLOW_DIR="$GITHUB_WORKSPACE/.github/workflows"
+
+          mkdir -p "$WORKFLOW_DIR"
+
+          cat > "$WORKFLOW_DIR/main.yml" <<'YAML'
+          name: HOPE-V8 Main CI
+
+          on:
+            push:
+              branches:
+                - main
+            pull_request:
+              branches:
+                - main
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          env:
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+          jobs:
+            mobile-ci:
+              name: Mobile CI
+              runs-on: ubuntu-latest
+
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+                - name: Setup Flutter
+                  uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+                  with:
+                    flutter-version: '3.47.2'
+                    cache: true
+
+                - name: Verify Flutter lockfile
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/verify-pubspec-lock-fresh.sh
+
+                - name: Validate API_BASE_URL
+                  shell: bash
+                  env:
+                    API_BASE_URL: ${{ secrets.API_BASE_URL }}
+                  run: |
+                    set -Eeuo pipefail
+
+                    if [ -z "${API_BASE_URL:-}" ]; then
+                      echo "API_BASE_URL secret is required" >&2
+                      exit 1
+                    fi
+
+                    case "$API_BASE_URL" in
+                      https://*)
+                        ;;
+                      *)
+                        echo "API_BASE_URL must use HTTPS" >&2
+                        exit 1
+                        ;;
+                    esac
+
+                    if [[ "$API_BASE_URL" =~ [[:space:]] ]]; then
+                      echo "API_BASE_URL contains whitespace or is malformed" >&2
+                      exit 1
+                    fi
+
+                    if ! printf '%s\n' "$API_BASE_URL" | grep -Eq '^https://[^[:space:]]+$'; then
+                      echo "API_BASE_URL contains whitespace or is malformed" >&2
+                      exit 1
+                    fi
+
+                - name: Flutter dependencies
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter pub get --enforce-lockfile
+
+                - name: Flutter tests
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter test --no-pub
+
+                - name: Backend audit
+                  working-directory: backend
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+
+                    set +e
+                    npm audit --audit-level=high
+                    status=$?
+                    set -e
+
+                    if [ "$status" -ne 0 ]; then
+                      echo "npm audit failed with status $status" >&2
+                      exit "$status"
+                    fi
+          YAML
+
+          cat > "$WORKFLOW_DIR/device-integration.yml" <<'YAML'
+          name: HOPE-V8 Device Integration
+
+          on:
+            workflow_dispatch:
+            pull_request:
+              branches:
+                - main
+
+          permissions:
+            contents: read
+
+          jobs:
+            device-integration:
+              name: Android Device Integration
+              runs-on: ubuntu-latest
+
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+                - name: Setup Flutter
+                  uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+                  with:
+                    flutter-version: '3.47.2'
+                    cache: true
+
+                - name: Verify Flutter lockfile
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/verify-pubspec-lock-fresh.sh
+
+                - name: Android toolchain contract
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/ci-android-toolchain.sh
+
+                - name: Flutter dependencies
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter pub get --enforce-lockfile
+
+                - name: Integration tests
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter test --no-pub integration_test
+          YAML
+
+          cat > "$WORKFLOW_DIR/staging-certification.yml" <<'YAML'
+          name: HOPE-V8 Staging Certification
+
+          on:
+            workflow_call:
+              secrets:
+                STAGING_BASE_URL:
+                  required: true
+                STAGING_S3_ENDPOINT:
+                  required: false
+                DRILL_DATABASE_URL:
+                  required: false
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            staging-certification:
+              name: Staging Certification
+              runs-on: ubuntu-latest
+
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+                - name: Verify Flutter lockfile
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/verify-pubspec-lock-fresh.sh
+
+                - name: Staging external integration gate
+                  shell: bash
+                  env:
+                    STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+                  run: |
+                    set -Eeuo pipefail
+
+                    if [ -z "${STAGING_BASE_URL:-}" ]; then
+                      echo "STAGING_BASE_URL is required" >&2
+                      exit 1
+                    fi
+
+                    case "$STAGING_BASE_URL" in
+                      https://*)
+                        ;;
+                      *)
+                        echo "STAGING_BASE_URL must use HTTPS" >&2
+                        exit 1
+                        ;;
+                    esac
+
+                - name: Staging product workflow
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/staging-smoke.sh
+
+                - name: Staging operational gate
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    node tools/staging-operational-gate.mjs
+
+                - name: S3 runtime probe
+                  shell: bash
+                  env:
+                    STAGING_S3_ENDPOINT: ${{ secrets.STAGING_S3_ENDPOINT }}
+                    S3_REQUIRE_HTTPS: '0'
+                  run: |
+                    set -Eeuo pipefail
+
+                    if [ -n "${STAGING_S3_ENDPOINT:-}" ]; then
+                      echo "S3 staging endpoint configured."
+                      echo "S3_REQUIRE_HTTPS=$S3_REQUIRE_HTTPS"
+                    else
+                      echo "S3 runtime probe skipped: STAGING_S3_ENDPOINT not configured."
+                    fi
+
+                - name: DR restore drill
+                  shell: bash
+                  env:
+                    DRILL_DATABASE_URL: ${{ secrets.DRILL_DATABASE_URL }}
+                  run: |
+                    set -Eeuo pipefail
+
+                    if [ -z "${DRILL_DATABASE_URL:-}" ]; then
+                      echo "DR restore drill skipped: DRILL_DATABASE_URL not configured."
+                      exit 0
+                    fi
+
+                    bash tools/staging-resilience-drill.sh
+
+                - name: Android emulator certification
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/android-runtime-cert-contract.sh
+
+                - name: Staging Flutter validation
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+
+                    flutter pub get --enforce-lockfile
+                    flutter test --no-pub
+          YAML
+
+          cat > "$WORKFLOW_DIR/production-release.yml" <<'YAML'
+          name: HOPE-V8 Production Release
+
+          on:
+            workflow_dispatch:
+            push:
+              tags:
+                - 'v*'
+
+          permissions:
+            contents: read
+
+          jobs:
+            staging-certification:
+              name: Staging Certification
+              uses: ./.github/workflows/staging-certification.yml
+              secrets: inherit
+
+            production:
+              name: Production Release
+              needs: staging-certification
+              runs-on: ubuntu-latest
+              environment: production
+
+              steps:
+                - name: Checkout
+                  uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+                - name: Enforce immutable release tag
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+
+                    if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+                      echo "Production release must originate from an immutable version tag." >&2
+                      exit 1
+                    fi
+
+                    TAG="${GITHUB_REF#refs/tags/}"
+                    VERSION="$(node -p "require('./backend/package.json').version")"
+
+                    if [ "$TAG" != "v$VERSION" ]; then
+                      echo "Release tag $TAG does not match application version v$VERSION" >&2
+                      exit 1
+                    fi
+
+                - name: Verify Flutter lockfile
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    bash tools/verify-pubspec-lock-fresh.sh
+
+                - name: Flutter dependencies
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter pub get --enforce-lockfile
+
+                - name: Flutter release tests
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    flutter test --no-pub
+
+                - name: Production npm audit
+                  working-directory: backend
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    npm audit --audit-level=high
+
+                - name: Build production backend image
+                  working-directory: backend
+                  shell: bash
+                  run: |
+                    set -Eeuo pipefail
+                    docker build --pull --file Dockerfile --tag hope-api:${GITHUB_SHA} .
+          YAML
+
+          echo 'PASS: canonical project workflows created.'
+
+      - name: Verify canonical workflow set
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          required_workflows=(
+            ".github/workflows/bootstrap.yml"
+            ".github/workflows/main.yml"
+            ".github/workflows/device-integration.yml"
+            ".github/workflows/staging-certification.yml"
+            ".github/workflows/production-release.yml"
+          )
+
+          for workflow in "${required_workflows[@]}"; do
+            test -s "$workflow" || {
+              echo "Missing required workflow: $workflow" >&2
+              exit 1
+            }
+          done
+
+          duplicate_bootstrap="$(
+            find tools backend lib test integration_test \
+              -type f \
+              \( \
+                -name 'bootstrap-v8.sh' \
+                -o \
+                -name 'bootstrap-dependencies.sh' \
+              \) \
+              -print 2>/dev/null || true
+          )"
+
+          if [ -n "$duplicate_bootstrap" ]; then
+            echo 'Duplicate internal Bootstrap detected:' >&2
+            printf '%s\n' "$duplicate_bootstrap" >&2
+            exit 1
+          fi
+
+          python3 tools/check-workflows.py
+
+          echo 'PASS: canonical workflow set and workflow contracts'
 
       - name: Setup Node 24
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -176,6 +567,12 @@ jobs:
             lib
             backend/src
             tools/check-workflows.py
+            tools/verify-pubspec-lock-fresh.sh
+            tools/ci-android-toolchain.sh
+            tools/android-runtime-cert-contract.sh
+            tools/staging-resilience-drill.sh
+            tools/staging-operational-gate.mjs
+            tools/staging-smoke.sh
           )
 
           for path in "${required[@]}"; do
@@ -184,27 +581,6 @@ jobs:
               exit 1
             fi
           done
-
-          if [ ! -f ".github/workflows/bootstrap.yml" ]; then
-            echo 'Missing GitHub Bootstrap controller.' >&2
-            exit 1
-          fi
-
-          duplicate_bootstrap="$(
-            find tools backend lib test integration_test \
-              -type f \
-              \( \
-                -name 'bootstrap-v8.sh' \
-                -o -name 'bootstrap-dependencies.sh' \
-              \) \
-              -print 2>/dev/null || true
-          )"
-
-          if [ -n "$duplicate_bootstrap" ]; then
-            echo 'Duplicate internal Bootstrap detected:' >&2
-            printf '%s\n' "$duplicate_bootstrap" >&2
-            exit 1
-          fi
 
           python3 tools/check-workflows.py
 
@@ -298,7 +674,6 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           npm audit --audit-level=high
 
       - name: Flutter validation
