@@ -2,6 +2,12 @@ name: HOPE-V8 Bootstrap
 
 on:
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Production release confirmation. Type release only when intentionally verifying production."
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -44,28 +50,23 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           shopt -s nullglob
-          archives=(
-            ./*.zip
-            ./HOPE-*.zip
-          )
+
+          archives=(./*.zip)
 
           if [ "${#archives[@]}" -eq 0 ]; then
             echo "BOOTSTRAP_FAIL: no source ZIP found."
             exit 10
           fi
 
-          archive="${archives[0]}"
-
-          if [ "${#archives[@]}" -gt 1 ]; then
-            echo "BOOTSTRAP_FAIL: multiple source ZIP archives found:"
+          if [ "${#archives[@]}" -ne 1 ]; then
+            echo "BOOTSTRAP_FAIL: expected exactly one source ZIP."
             printf ' - %s\n' "${archives[@]}"
             exit 10
           fi
 
-          echo "archive=$archive"
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "archive=${archives[0]}"
+          echo "archive=${archives[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Extract source archive
         id: source
@@ -82,12 +83,12 @@ jobs:
           unzip -q "$ARCHIVE" -d "$SOURCE_ROOT"
 
           echo "=== EXTRACTED SOURCE ==="
-          find "$SOURCE_ROOT" -maxdepth 3 -type f | sort | head -200
+          find "$SOURCE_ROOT" -maxdepth 4 -type f | sort | head -300
 
-          # Find the actual Flutter/backend project root.
           PROJECT_ROOT=""
 
-          if [ -f "$SOURCE_ROOT/pubspec.yaml" ]; then
+          if [ -f "$SOURCE_ROOT/pubspec.yaml" ] &&
+             [ -f "$SOURCE_ROOT/backend/package.json" ]; then
             PROJECT_ROOT="$SOURCE_ROOT"
           else
             while IFS= read -r candidate; do
@@ -107,9 +108,21 @@ jobs:
           echo "project_root=$PROJECT_ROOT"
           echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
 
-          chmod +x "$PROJECT_ROOT"/android/gradlew 2>/dev/null || true
-          find "$PROJECT_ROOT/tools" "$PROJECT_ROOT/scripts" \
-            -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
+          chmod +x "$PROJECT_ROOT/android/gradlew" 2>/dev/null || true
+
+          if [ -d "$PROJECT_ROOT/tools" ]; then
+            find "$PROJECT_ROOT/tools" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
+
+          if [ -d "$PROJECT_ROOT/scripts" ]; then
+            find "$PROJECT_ROOT/scripts" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -156,7 +169,6 @@ jobs:
           echo "=== ANDROID TOOLCHAIN ==="
           command -v adb
           adb version
-
           command -v sdkmanager
           sdkmanager --version
 
@@ -175,10 +187,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [ ! -f tools/check-workflows.py ]; then
-            echo "BOOTSTRAP_FAIL: missing tools/check-workflows.py"
-            exit 12
-          fi
+          test -f tools/check-workflows.py
 
           python3 tools/check-workflows.py
 
@@ -187,12 +196,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
-          if [ -x tools/static_audit.sh ]; then
-            bash tools/static_audit.sh
-          else
-            bash tools/static_audit.sh
-          fi
+          bash tools/static_audit.sh
 
       - name: Backend dependency installation
         working-directory: ${{ steps.source.outputs.project_root }}/backend
@@ -220,6 +224,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+
           flutter pub get
           bash tools/verify-pubspec-lock-fresh.sh
 
@@ -275,7 +280,6 @@ jobs:
           echo "ADB:     $(adb version | head -1)"
           echo "Source:  ${{ steps.source.outputs.project_root }}"
           echo "=========================================="
-
 
   staging:
     name: Staging Certification
@@ -348,6 +352,7 @@ jobs:
           set -Eeuo pipefail
 
           SOURCE_ROOT="$RUNNER_TEMP/hope-source"
+
           rm -rf "$SOURCE_ROOT"
           mkdir -p "$SOURCE_ROOT"
 
@@ -376,8 +381,20 @@ jobs:
           echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
 
           chmod +x "$PROJECT_ROOT/android/gradlew" 2>/dev/null || true
-          find "$PROJECT_ROOT/tools" "$PROJECT_ROOT/scripts" \
-            -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
+
+          if [ -d "$PROJECT_ROOT/tools" ]; then
+            find "$PROJECT_ROOT/tools" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
+
+          if [ -d "$PROJECT_ROOT/scripts" ]; then
+            find "$PROJECT_ROOT/scripts" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -452,6 +469,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+
           flutter pub get
           bash tools/verify-pubspec-lock-fresh.sh
 
@@ -479,7 +497,6 @@ jobs:
           done
 
           pg_isready -h 127.0.0.1 -p 5432 -U postgres -d hope
-
           npm run test:postgres
 
       - name: S3 runtime certification
@@ -519,7 +536,6 @@ jobs:
           set -Eeuo pipefail
 
           node tools/perf-smoke.mjs
-
           test -s perf-smoke.json
 
       - name: Staging product smoke
@@ -541,7 +557,6 @@ jobs:
 
       - name: Notification delivery certification
         id: notification
-        if: ${{ secrets.STAGING_NOTIFICATION_TOKEN != '' && (secrets.STAGING_PUSH_URL != '' || secrets.STAGING_EMAIL_URL != '') }}
         working-directory: ${{ steps.source.outputs.project_root }}/backend
         env:
           STAGING_NOTIFICATION_TOKEN: ${{ secrets.STAGING_NOTIFICATION_TOKEN }}
@@ -550,6 +565,16 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+
+          if [ -z "${STAGING_NOTIFICATION_TOKEN:-}" ]; then
+            echo "Notification delivery certification skipped: token is not configured."
+            exit 0
+          fi
+
+          if [ -z "${STAGING_PUSH_URL:-}" ] && [ -z "${STAGING_EMAIL_URL:-}" ]; then
+            echo "Notification delivery certification skipped: neither push nor email endpoint is configured."
+            exit 0
+          fi
 
           node ../tools/staging-notification-delivery.mjs \
             | tee staging-notification-delivery.txt
@@ -564,7 +589,6 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           bash tools/build_apk_debug.sh
 
       - name: Android emulator certification
@@ -589,7 +613,6 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           bash ../scripts/dr-restore-drill.sh
 
       - name: Runtime certification preflight
@@ -614,12 +637,13 @@ jobs:
         shell: bash
         env:
           RELEASE_SHA: ${{ github.sha }}
+          STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL }}
         run: |
           set -Eeuo pipefail
 
           STATUS="pass"
 
-          if [ "${{ vars.STAGING_BASE_URL }}" = "" ]; then
+          if [ -z "${STAGING_BASE_URL:-}" ]; then
             echo "STAGING_BASE_URL is not configured."
             echo "Performance/product runtime certification cannot be proven."
             STATUS="fail"
@@ -639,9 +663,8 @@ jobs:
           echo "STAGING CERTIFICATION PASS"
           echo "sha=$RELEASE_SHA"
           echo "run_id=$GITHUB_RUN_ID"
-          echo "attempt=$GITHUB_RUN_ATTEMPT"
+          echo "attempt=${GITHUB_RUN_ATTEMPT}"
           echo "=========================================="
-
 
   production:
     name: Production Release Verification
@@ -713,8 +736,20 @@ jobs:
           echo "project_root=$PROJECT_ROOT" >> "$GITHUB_OUTPUT"
 
           chmod +x "$PROJECT_ROOT/android/gradlew" 2>/dev/null || true
-          find "$PROJECT_ROOT/tools" "$PROJECT_ROOT/scripts" \
-            -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
+
+          if [ -d "$PROJECT_ROOT/tools" ]; then
+            find "$PROJECT_ROOT/tools" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
+
+          if [ -d "$PROJECT_ROOT/scripts" ]; then
+            find "$PROJECT_ROOT/scripts" \
+              -type f \
+              -name '*.sh' \
+              -exec chmod +x {} \;
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -784,8 +819,6 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          # This bootstrap is intentionally verification-only.
-          # Production release is never silently promoted.
           echo "Production verification reached."
           echo "Target SHA: $GITHUB_SHA"
 
@@ -808,8 +841,8 @@ jobs:
             exit 50
           fi
 
-          test "$STAGING_RUN_ID" != ""
-          test "$STAGING_ATTEMPT" != ""
+          test -n "$STAGING_RUN_ID"
+          test -n "$STAGING_ATTEMPT"
 
       - name: Verify immutable semantic tag
         working-directory: ${{ steps.source.outputs.project_root }}
@@ -823,7 +856,12 @@ jobs:
           import re
 
           text = pathlib.Path("pubspec.yaml").read_text(encoding="utf-8")
-          match = re.search(r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+(?:\+[0-9]+)?)\s*$", text, re.MULTILINE)
+
+          match = re.search(
+              r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+(?:\+[0-9]+)?)\s*$",
+              text,
+              re.MULTILINE,
+          )
 
           if not match:
               raise SystemExit("PRODUCTION_FAIL: pubspec version not found.")
@@ -942,7 +980,6 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-
           npm run test:production-env
 
       - name: Build production APK
@@ -1007,6 +1044,8 @@ jobs:
 
           test -n "$IMAGE_ID"
 
+          mkdir -p ../artifacts
+
           echo "$IMAGE_ID" | tee ../artifacts/backend-image-id.txt
 
       - name: Release manifest
@@ -1016,7 +1055,7 @@ jobs:
           STAGING_CERTIFICATION_RUN_ID: ${{ needs.staging.outputs.certification_run_id }}
           STAGING_CERTIFICATION_SHA: ${{ needs.staging.outputs.certification_sha }}
           STAGING_CERTIFICATION_ATTEMPT: ${{ needs.staging.outputs.certification_attempt }}
-          BACKEND_IMAGE_ID: ${{ github.sha }}
+          BACKEND_IMAGE_ID: ${{ needs.staging.outputs.certification_sha }}
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -1027,7 +1066,6 @@ jobs:
 
       - name: Verify release manifest identity
         working-directory: ${{ steps.source.outputs.project_root }}/backend
-        shell: bash
         env:
           EXPECTED_SHA: ${{ github.sha }}
           EXPECTED_STAGING_SHA: ${{ needs.staging.outputs.certification_sha }}
@@ -1050,28 +1088,48 @@ jobs:
 
           def require(name, value):
               if value in (None, "", False):
-                  raise SystemExit(f"RELEASE_MANIFEST_FAIL: missing {name}")
+                  raise SystemExit(
+                      f"RELEASE_MANIFEST_FAIL: missing {name}"
+                  )
 
-          require("certification_status", data.get("staging_certification_status"))
-          require("staging_certification_run_id", data.get("staging_certification_run_id"))
-          require("staging_certification_sha", data.get("staging_certification_sha"))
+          require(
+              "certification_status",
+              data.get("staging_certification_status"),
+          )
+
+          require(
+              "staging_certification_run_id",
+              data.get("staging_certification_run_id"),
+          )
+
+          require(
+              "staging_certification_sha",
+              data.get("staging_certification_sha"),
+          )
 
           if str(data["staging_certification_status"]).upper() != "PASS":
-              raise SystemExit("RELEASE_MANIFEST_FAIL: staging certification is not PASS")
+              raise SystemExit(
+                  "RELEASE_MANIFEST_FAIL: staging certification is not PASS"
+              )
 
           if data["staging_certification_sha"] != expected_sha:
               raise SystemExit(
-                  "RELEASE_MANIFEST_FAIL: staging certification SHA does not equal release SHA"
+                  "RELEASE_MANIFEST_FAIL: staging certification SHA "
+                  "does not equal release SHA"
               )
 
           if data["staging_certification_sha"] != expected_staging_sha:
               raise SystemExit(
-                  "RELEASE_MANIFEST_FAIL: manifest staging SHA differs from staging job output"
+                  "RELEASE_MANIFEST_FAIL: manifest staging SHA "
+                  "differs from staging job output"
               )
 
-          if str(data["staging_certification_run_id"]) != str(expected_staging_run_id):
+          if str(data["staging_certification_run_id"]) != str(
+              expected_staging_run_id
+          ):
               raise SystemExit(
-                  "RELEASE_MANIFEST_FAIL: manifest staging run ID differs from staging job output"
+                  "RELEASE_MANIFEST_FAIL: manifest staging run ID "
+                  "differs from staging job output"
               )
 
           print("RELEASE_MANIFEST_IDENTITY_PASS")
