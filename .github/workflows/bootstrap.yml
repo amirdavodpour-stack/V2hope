@@ -1,4 +1,4 @@
-name: HOPE ZIP Release/Staging Bootstrap v2
+name: HOPE ZIP Release/Staging Bootstrap v3
 
 on:
   workflow_dispatch:
@@ -17,8 +17,8 @@ on:
         type: string
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
+  actions: read
 
 concurrency:
   group: hope-zip-bootstrap-${{ github.ref }}
@@ -38,7 +38,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Import final HOPE project without replacing bootstrap
+      - name: Require workflow-capable repository token
+        shell: bash
+        env:
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$REPO_WORKFLOW_TOKEN" || {
+            echo "ERROR: repository secret REPO_WORKFLOW_TOKEN is required." >&2
+            echo "It must be a token authorized to push repository workflow files." >&2
+            exit 1
+          }
+
+      - name: Import final HOPE project and preserve active bootstrap
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -53,24 +65,38 @@ jobs:
 
           unzip -q "$ZIP_FILE" -d "$TMP"
 
-          test -f "$TMP/pubspec.yaml" || {
-            echo "ERROR: final ZIP does not contain pubspec.yaml." >&2
-            exit 1
-          }
-          test -d "$TMP/.github/workflows" || {
-            echo "ERROR: final ZIP does not contain .github/workflows." >&2
-            exit 1
-          }
+          # Accept either a repository-root ZIP or a single top-level wrapper.
+          if [ ! -f "$TMP/pubspec.yaml" ]; then
+            roots=()
+            while IFS= read -r -d '' d; do
+              roots+=("$d")
+            done < <(find "$TMP" -mindepth 1 -maxdepth 1 -type d -print0)
 
-          # Import everything except .git and .github/workflows.
-          # The currently installed bootstrap.yml and existing workflow files
-          # are intentionally preserved. This avoids requiring the GITHUB_TOKEN
-          # to create/update workflow files.
+            if [ "${#roots[@]}" -eq 1 ] && [ -f "${roots[0]}/pubspec.yaml" ]; then
+              TMP="${roots[0]}"
+            else
+              echo "ERROR: final ZIP does not resolve to a Flutter project root containing pubspec.yaml." >&2
+              exit 1
+            fi
+          fi
+
+          test -f "$TMP/pubspec.yaml"
+          test -d "$TMP/.github/workflows"
+
+          # Import all project files, including final workflows, except the
+          # active bootstrap.yml. The existing bootstrap remains byte-for-byte
+          # untouched, while every other final workflow is installed.
           while IFS= read -r -d '' item; do
             rel="${item#"$TMP"/}"
+
             case "$rel" in
-              .github/workflows|.github/workflows/*)
+              .git|.git/*)
                 continue
+                ;;
+              .github/workflows/bootstrap.yml)
+                continue
+                ;;
+              .github/workflows)
                 ;;
             esac
 
@@ -78,23 +104,19 @@ jobs:
             rm -rf -- "$target"
             mkdir -p "$(dirname "$target")"
             cp -a "$item" "$target"
-          done < <(find "$TMP" -mindepth 1 -maxdepth 1 -print0)
+          done < <(find "$TMP" -mindepth 1 -print0)
 
-          # Import the final workflow set only as audit artifacts outside
-          # .github/workflows. They are NOT activated by this run.
-          rm -rf .ci-final-workflows
-          mkdir -p .ci-final-workflows
-          cp -a "$TMP/.github/workflows/." .ci-final-workflows/
+          # Remove any malformed nested workflow tree from a previous import.
+          rm -rf .github/workflows/.github
 
-          # Required executable permissions.
           chmod +x android/gradlew
           find tools -type f -name '*.sh' -exec chmod +x {} +
 
           echo "Final project imported."
-          echo "Existing .github/workflows files preserved."
+          echo "Active bootstrap preserved."
           git status --short
 
-      - name: Validate imported project
+      - name: Validate final project and workflows
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -105,39 +127,58 @@ jobs:
 
           python3 tools/check-workflows.py
 
-      - name: Validate final workflow payload separately
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
           import yaml
 
-          root = Path(".ci-final-workflows")
+          root = Path(".github/workflows")
           required = {
               "bootstrap.yml",
               "staging-certification.yml",
               "production-release.yml",
           }
 
-          names = {p.name for p in root.glob("*.yml")} | {p.name for p in root.glob("*.yaml")}
+          files = sorted(root.glob("*.yml")) + sorted(root.glob("*.yaml"))
+          names = {p.name for p in files}
           missing = sorted(required - names)
           if missing:
-              raise SystemExit(f"Missing final workflow files: {', '.join(missing)}")
+              raise SystemExit(
+                  "Missing required active workflows: " + ", ".join(missing)
+              )
 
-          for path in sorted(root.iterdir()):
-              if path.suffix not in {".yml", ".yaml"}:
-                  continue
+          nested = list(root.glob("**/.github/workflows/*"))
+          if nested:
+              raise SystemExit(
+                  "Malformed nested workflow tree detected: "
+                  + ", ".join(str(p) for p in nested)
+              )
+
+          for path in files:
               with path.open(encoding="utf-8") as fh:
                   yaml.safe_load(fh)
               print(f"YAML OK: {path}")
 
-          print("Final workflow payload is syntactically valid.")
+          print("ACTIVE_WORKFLOW_VALIDATION_PASS")
           PY
 
-      - name: Commit imported project
+      - name: Verify active bootstrap is unchanged
         shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          git diff -- .github/workflows/bootstrap.yml
+
+          if git diff --quiet -- .github/workflows/bootstrap.yml; then
+            echo "BOOTSTRAP_PRESERVED_PASS"
+          else
+            echo "ERROR: active .github/workflows/bootstrap.yml changed." >&2
+            exit 1
+          fi
+
+      - name: Commit final project
+        shell: bash
+        env:
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
         run: |
           set -Eeuo pipefail
 
@@ -148,37 +189,44 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No repository changes needed."
+            echo "IMPORT_COMMIT_SKIPPED_PASS"
           else
             git commit -m "Import final HOPE release staging project"
+            git remote set-url origin "https://x-access-token:${REPO_WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
             git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "IMPORT_PUSH_PASS"
           fi
 
-      - name: Check bootstrap workflow remained untouched
+      - name: Verify pushed revision
         shell: bash
+        env:
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
         run: |
           set -Eeuo pipefail
 
-          git diff HEAD^ HEAD -- .github/workflows/bootstrap.yml || true
+          git fetch origin "${GITHUB_REF_NAME}"
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
 
-          # The import step deliberately never writes this file.
-          # If it changed for another reason, fail rather than silently
-          # replacing the active bootstrap workflow.
-          if git diff --quiet HEAD^ HEAD -- .github/workflows/bootstrap.yml; then
-            echo "BOOTSTRAP_PRESERVED_PASS"
-          else
-            echo "ERROR: active .github/workflows/bootstrap.yml changed." >&2
+          test "$LOCAL" = "$REMOTE" || {
+            echo "ERROR: pushed revision does not match local revision." >&2
+            echo "local=$LOCAL" >&2
+            echo "remote=$REMOTE" >&2
             exit 1
-          fi
+          }
+
+          echo "PUSHED_REVISION_PASS=$REMOTE"
 
       - name: Dispatch staging certification
         if: ${{ env.MODE == 'staging' }}
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
         run: |
           set -Eeuo pipefail
 
           gh workflow run staging-certification.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref "${GITHUB_REF_NAME}"
 
           echo "STAGING_DISPATCHED_PASS"
@@ -187,7 +235,7 @@ jobs:
         if: ${{ env.MODE == 'release' }}
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
         run: |
           set -Eeuo pipefail
 
@@ -197,6 +245,7 @@ jobs:
           }
 
           gh workflow run production-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
             --ref "${GITHUB_REF_NAME}" \
             -f confirm=release
 
