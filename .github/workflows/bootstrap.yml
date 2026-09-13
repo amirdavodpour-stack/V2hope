@@ -1,828 +1,140 @@
-name: HOPE-V8 Bootstrap
+name: HOPE ZIP Release/Staging Bootstrap
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Extract the final HOPE ZIP, commit it, then run staging or full release"
+        required: true
+        type: choice
+        options:
+          - staging
+          - release
+        default: staging
       confirm:
-        description: "Run bootstrap verification"
+        description: "Type release only when mode=release"
         required: false
-        default: "verify"
         type: string
 
 permissions:
-  contents: read
-  actions: read
+  contents: write
+  actions: write
 
-env:
-  NODE_VERSION: "24"
-  JAVA_VERSION: "17"
-  FLUTTER_VERSION: "3.47.2"
-  ANDROID_BUILD_TOOLS: "36.0.0"
-  ANDROID_PLATFORM: "android-36"
-  ANDROID_NDK_VERSION: "28.2.13676358"
-  GRADLE_VERSION: "8.14.3"
+concurrency:
+  group: hope-zip-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   bootstrap:
-    name: Bootstrap and Verify HOPE-V8
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-
+    runs-on: ubuntu-latest
+    env:
+      ZIP_FILE: HOPE-V8-RELEASE-STAGING-FINAL.zip
+      MODE: ${{ inputs.mode }}
+      CONFIRM: ${{ inputs.confirm }}
     steps:
-      - name: Checkout bootstrap repository
+      - name: Checkout current repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
-      - name: Locate source archive
-        id: source_archive
+      - name: Import final HOPE project from ZIP
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          mapfile -t archives < <(
-            find . -maxdepth 3 -type f \
-              \( -name '*.zip' -o -name '*.ZIP' \) \
-              -not -path './.git/*' \
-              -print
-          )
-
-          if [ "${#archives[@]}" -ne 1 ]; then
-            echo "Expected exactly one source ZIP archive; found ${#archives[@]}." >&2
-            printf '%s\n' "${archives[@]}" >&2
-            exit 1
-          fi
-
-          ARCHIVE="${archives[0]}"
-          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
-          echo "SOURCE_ARCHIVE=$ARCHIVE"
-
-      - name: Extract source archive
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          rm -rf .bootstrap-source
-          mkdir -p .bootstrap-source
-
-          unzip -q "${{ steps.source_archive.outputs.archive }}" -d .bootstrap-source
-
-          test -f .bootstrap-source/pubspec.yaml || {
-            echo "Source archive does not contain pubspec.yaml at expected root." >&2
-            find .bootstrap-source -maxdepth 3 -type f | sort | head -200 >&2
+          test -f "$ZIP_FILE" || {
+            echo "ERROR: $ZIP_FILE was not found at repository root." >&2
             exit 1
           }
 
-      - name: Import source project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
 
-          SOURCE_ROOT=".bootstrap-source"
+          unzip -q "$ZIP_FILE" -d "$TMP"
 
-          cp -a "$SOURCE_ROOT/." .
-
-          test -f pubspec.yaml
-          test -f pubspec.lock
-          test -f backend/package.json
-          test -f backend/package-lock.json
-
-      - name: Apply Flutter Gradle build directory contract
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          test -f android/build.gradle.kts
-
-          cp android/build.gradle.kts android/build.gradle.kts.before-bootstrap-fix
-
-          cat > android/build.gradle.kts <<'EOF'
-          // Root Gradle configuration for the HOPE Flutter application.
-          //
-          // Flutter expects Android build outputs under the Flutter project root:
-          //   build/app/outputs/...
-          //
-          // Keep Gradle's project/module build directories aligned with that
-          // Flutter-managed build directory.
-
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+          test -f "$TMP/.github/workflows/staging-certification.yml" || {
+            echo "ERROR: final ZIP does not contain staging-certification.yml." >&2
+            exit 1
+          }
+          test -f "$TMP/.github/workflows/production-release.yml" || {
+            echo "ERROR: final ZIP does not contain production-release.yml." >&2
+            exit 1
+          }
+          test -f "$TMP/pubspec.yaml" || {
+            echo "ERROR: final ZIP does not contain pubspec.yaml." >&2
+            exit 1
           }
 
-          val flutterProjectRoot = rootProject.projectDir.parentFile
-          val flutterBuildDir = flutterProjectRoot.resolve("build")
+          # Replace repository contents with the final project while keeping
+          # the uploaded ZIP available for audit/recovery.
+          find . -mindepth 1 -maxdepth 1 \
+            ! -name '.git' \
+            ! -name "$ZIP_FILE" \
+            -exec rm -rf -- {} +
 
-          rootProject.layout.buildDirectory.set(flutterBuildDir)
+          cp -a "$TMP/." .
 
-          subprojects {
-              layout.buildDirectory.set(
-                  flutterBuildDir.resolve(project.name)
-              )
-          }
-
-          tasks.register<Delete>("clean") {
-              delete(flutterBuildDir)
-          }
-          EOF
-
-          echo "Applied Flutter/Gradle build directory contract."
-
-          echo "---- android/build.gradle.kts ----"
-          cat android/build.gradle.kts
-
-          echo "---- verification ----"
-
-          grep -q \
-            'rootProject.layout.buildDirectory.set(flutterBuildDir)' \
-            android/build.gradle.kts
-
-          grep -q \
-            'flutterBuildDir.resolve(project.name)' \
-            android/build.gradle.kts
-
-          echo "ANDROID_GRADLE_BUILD_DIRECTORY_CONTRACT_PASS"
-
-      - name: Restore executable permissions
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          find tools -type f -name '*.sh' -exec chmod +x {} \; 2>/dev/null || true
-
-          test -e android/gradlew
+          # Preserve the executable permissions required by the Android/CI toolchain.
           chmod +x android/gradlew
-          test -x android/gradlew
+          find tools -type f -name '*.sh' -exec chmod +x {} +
 
-      - name: Create GitHub test certification documentation
-        shell: bash
-        run: |
-          set -Eeuo pipefail
+          echo "Imported final project:"
+          git status --short
 
-          mkdir -p docs
-
-          cat > docs/GITHUB-TEST-CERTIFICATION.md <<'EOF'
-          # HOPE GitHub Test Certification
-
-          ## Purpose
-
-          GitHub Actions is the authoritative CI environment for validating the
-          HOPE application before staging and production certification.
-
-          The certification pipeline must test the real application and must not
-          hide failures by deleting tests, skipping tests, weakening assertions,
-          lowering thresholds, or replacing failing commands with non-failing
-          placeholders.
-
-          ## Test order
-
-          The bootstrap pipeline validates the project in this order:
-
-          1. Source archive integrity.
-          2. Repository structure.
-          3. Executable permissions.
-          4. Node.js 24.
-          5. Java 17.
-          6. Flutter 3.47.2.
-          7. Resource guard.
-          8. Agent preflight.
-          9. Workflow graph validation.
-          10. Backend dependency installation.
-          11. Backend authoritative `npm run check:all`.
-          12. High-severity npm audit.
-          13. SBOM generation and verification.
-          14. Flutter dependency lock verification.
-          15. Flutter static analysis.
-          16. Flutter unit/widget tests.
-          17. Android toolchain validation.
-          18. Android build preflight.
-          19. Runtime certification preflight.
-          20. Android debug APK certification.
-          21. Evidence collection and artifact upload.
-
-          ## Backend authoritative suite
-
-          `backend/package.json` defines `check:all` as the authoritative backend
-          test contract.
-
-          CI must invoke:
-
-          ```text
-          npm run check:all
-          ```
-
-          CI must not invent scripts that are absent from `package.json`.
-
-          In particular, `npm run test:analytics` is not part of the authoritative
-          suite and must not be introduced as a fabricated requirement.
-
-          ## Flutter tests
-
-          CI runs:
-
-          ```text
-          flutter analyze
-          flutter test --no-pub
-          ```
-
-          Tests are not deleted, skipped, or weakened to make CI green.
-
-          ## Android certification
-
-          Android certification requires all of the following:
-
-          - Java 17.
-          - Flutter 3.47.2.
-          - Android platform `android-36`.
-          - Android build tools `36.0.0`.
-          - NDK `28.2.13676358`.
-          - executable `android/gradlew`.
-          - Android build preflight success.
-          - runtime preflight success.
-          - successful Flutter debug build.
-          - APK existence.
-          - APK size sanity check.
-          - package identity verification.
-          - versionName verification.
-          - versionCode verification.
-          - SHA-256 evidence.
-
-          A Gradle `BUILD SUCCESSFUL` message alone is not sufficient.
-          Flutter must also discover the APK at its canonical output path.
-
-          ## Run #73 root cause
-
-          Run #73 reached the Android Gradle packaging task and Gradle reported
-          successful execution, but Flutter then reported:
-
-          ```text
-          Gradle build failed to produce an .apk file.
-          ```
-
-          The failure was caused by a mismatch between Gradle's Android build
-          directory and Flutter's expected project-level build directory.
-
-          This is a project configuration defect.
-
-          It is not:
-
-          - a missing secret;
-          - a failed Flutter test;
-          - a Java version failure;
-          - an Android SDK installation failure;
-          - a resource guard failure.
-
-          ## SBOM certification
-
-          The SBOM generator writes:
-
-          ```text
-          backend/sbom.json
-          ```
-
-          CI copies and verifies it at:
-
-          ```text
-          backend/artifacts/sbom.json
-          ```
-
-          The workflow must not expect `artifacts/sbom.json` before creating the
-          `artifacts` directory.
-
-          ## Failure policy
-
-          A failure is fixed at its root cause.
-
-          Prohibited CI-only bypasses include:
-
-          - `|| true` around a required certification command;
-          - deleting or renaming failing tests;
-          - changing assertions solely to pass CI;
-          - lowering performance/security thresholds;
-          - skipping a failing test without an explicit product requirement;
-          - converting a required failure into a warning;
-          - inventing a fake successful artifact;
-          - accepting an APK that Flutter cannot locate;
-          - treating Gradle success as sufficient when Flutter build output is missing.
-
-          ## Evidence
-
-          Every bootstrap run uploads:
-
-          - Android debug build log.
-          - bootstrap environment.
-          - pubspec.yaml.
-          - pubspec.lock.
-          - SBOM.
-          - generated certification documentation.
-
-          Evidence must remain traceable to:
-
-          - Git SHA.
-          - workflow run ID.
-          - workflow attempt.
-          - runner environment.
-
-          ## Release relationship
-
-          Bootstrap verification is not a substitute for staging or production
-          certification.
-
-          Staging must pass its complete certification gate before production
-          release is permitted.
-
-          Production release must remain gated by the repository's release
-          confirmation, immutable tag/SHA validation, production environment
-          validation, signed artifact verification, release manifest, SBOM,
-          provenance attestation, and evidence upload.
-          EOF
-
-          cat > docs/ANDROID-GRADLE-BUILD-DIRECTORY.md <<'EOF'
-          # Android / Flutter Gradle Build Directory Contract
-
-          ## Required contract
-
-          The Flutter project root is the directory containing:
-
-          ```text
-          pubspec.yaml
-          android/
-          build/
-          ```
-
-          Flutter expects Android APK/AAB outputs below:
-
-          ```text
-          build/app/outputs/
-          ```
-
-          Therefore Android Gradle must use the Flutter project root's `build`
-          directory rather than an isolated `android/build` directory.
-
-          ## Canonical configuration
-
-          `android/build.gradle.kts` must contain the equivalent of:
-
-          ```kotlin
-          val flutterProjectRoot = rootProject.projectDir.parentFile
-          val flutterBuildDir = flutterProjectRoot.resolve("build")
-
-          rootProject.layout.buildDirectory.set(flutterBuildDir)
-
-          subprojects {
-              layout.buildDirectory.set(
-                  flutterBuildDir.resolve(project.name)
-              )
-          }
-          ```
-
-          This produces:
-
-          ```text
-          build/app/outputs/flutter-apk/
-          ```
-
-          ## Why this matters
-
-          A Gradle build can report:
-
-          ```text
-          BUILD SUCCESSFUL
-          ```
-
-          while Flutter still fails if Gradle placed the APK outside the path
-          Flutter expects.
-
-          Therefore CI must validate both layers:
-
-          1. Gradle successfully executes `:app:packageDebug`.
-          2. Flutter successfully discovers the generated APK.
-
-          ## Run #73
-
-          Run #73 demonstrated exactly this failure mode:
-
-          - Gradle packaging completed.
-          - Flutter subsequently reported that no APK was produced.
-          - The failure occurred after Gradle completion.
-          - The correct fix is the build-directory contract above.
-
-          ## Certification
-
-          The debug build must verify:
-
-          - APK exists.
-          - APK is non-empty.
-          - APK is larger than the minimum sanity threshold.
-          - application ID is correct.
-          - versionName matches `pubspec.yaml`.
-          - versionCode matches `pubspec.yaml`.
-          - SHA-256 is recorded.
-
-          This is a project/build configuration requirement, not a CI bypass.
-          EOF
-
-          echo "Documentation created:"
-          find docs -maxdepth 1 -type f -print | sort
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Setup Java
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-
-      - name: Verify repository structure
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          required_files=(
-            pubspec.yaml
-            pubspec.lock
-            backend/package.json
-            backend/package-lock.json
-            android/gradlew
-            android/build.gradle.kts
-            tools/agent-preflight.sh
-            tools/runtime-certification-preflight.sh
-            tools/android-build-preflight.sh
-            tools/ci-android-toolchain.sh
-            tools/build_apk_debug.sh
-            tools/build_apk_release.sh
-            tools/check-workflows.py
-            .github/workflows/staging-certification.yml
-            .github/workflows/production-release.yml
-            docs/GITHUB-TEST-CERTIFICATION.md
-            docs/ANDROID-GRADLE-BUILD-DIRECTORY.md
-          )
-
-          for file in "${required_files[@]}"; do
-            test -e "$file" || {
-              echo "Missing required path: $file" >&2
-              exit 1
-            }
-          done
-
-      - name: Resource guard
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          bash tools/ci-resource-guard.sh
-
-      - name: Agent preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          bash tools/agent-preflight.sh
-
-      - name: Validate workflow graph
+      - name: Validate imported workflows before commit
         shell: bash
         run: |
           set -Eeuo pipefail
           python3 tools/check-workflows.py
 
-      - name: Install backend dependencies
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          npm ci
-
-      - name: Backend authoritative test suite
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          npm run check:all
-
-      - name: Backend security audit
-        working-directory: backend
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          npm audit --audit-level=high
-
-      - name: Generate backend SBOM
-        working-directory: backend
+      - name: Commit imported final project
+        id: commit
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          npm run sbom
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          test -s sbom.json || {
-            echo "SBOM was not generated or is empty." >&2
-            find . -maxdepth 3 -type f \
-              \( -name '*sbom*' -o -name '*SBOM*' \) \
-              -print >&2 || true
-            exit 1
-          }
-
-          mkdir -p artifacts
-          cp sbom.json artifacts/sbom.json
-
-          test -s artifacts/sbom.json
-
-          echo "SBOM verified: $(wc -c < artifacts/sbom.json) bytes"
-
-          if grep -q '"bom-ref"' artifacts/sbom.json; then
-            echo "SBOM component references:"
-            grep -o '"bom-ref"' artifacts/sbom.json | wc -l
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No repository changes were needed."
+          else
+            git commit -m "Bootstrap final HOPE release/staging project"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Flutter dependencies
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          flutter pub get --enforce-lockfile
-
-          if [ -x tools/verify-pubspec-lock-fresh.sh ]; then
-            bash tools/verify-pubspec-lock-fresh.sh
-          fi
-
-      - name: Flutter analyze
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          flutter analyze
-
-      - name: Flutter tests
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          flutter test --no-pub
-
-      - name: Configure Android toolchain
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          bash tools/ci-android-toolchain.sh
-
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
-
-          test -d "$SDK_ROOT"
-
-          export ANDROID_HOME="$SDK_ROOT"
-          export ANDROID_SDK_ROOT="$SDK_ROOT"
-
-          ANDROID_PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/emulator:$SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}:$PATH"
-
-          export PATH="$ANDROID_PATH"
-
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "PATH=$ANDROID_PATH" >> "$GITHUB_ENV"
-
-          {
-            echo "$SDK_ROOT/platform-tools"
-            echo "$SDK_ROOT/cmdline-tools/latest/bin"
-            echo "$SDK_ROOT/emulator"
-            echo "$SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}"
-          } >> "$GITHUB_PATH"
-
-          command -v adb
-          adb version
-
-          command -v sdkmanager
-          sdkmanager --version
-
-      - name: Android build preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          bash tools/android-build-preflight.sh
-
-      - name: Runtime certification preflight
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
-
-          export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/emulator:$SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}:$PATH"
-
-          command -v adb
-          adb version
-
-          bash tools/runtime-certification-preflight.sh
-
-      - name: Android debug build certification
-        timeout-minutes: 30
+      - name: Dispatch staging certification
+        if: ${{ env.MODE == 'staging' }}
         shell: bash
         env:
-          API_BASE_URL: https://staging.api.hope.app
-          BUILD_PROFILE: pilot
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          gh workflow run staging-certification.yml \
+            --ref "${GITHUB_REF_NAME}"
 
-          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
+          echo "STAGING workflow dispatched on ${GITHUB_REF_NAME}."
+          echo "The staging workflow is now running from the imported final project."
 
-          export PATH="$SDK_ROOT/platform-tools:$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/emulator:$SDK_ROOT/build-tools/${ANDROID_BUILD_TOOLS}:$PATH"
-
-          mkdir -p artifacts
-
-          echo "========================================"
-          echo "Android debug build environment"
-          echo "========================================"
-
-          echo "--- Java ---"
-          java -version
-          javac -version
-
-          echo "--- Flutter ---"
-          flutter --version
-
-          echo "--- ADB ---"
-          adb version
-
-          echo "--- Android build tools ---"
-
-          if command -v aapt2 >/dev/null 2>&1; then
-            aapt2 version || true
-          fi
-
-          if command -v apksigner >/dev/null 2>&1; then
-            apksigner --version || true
-          fi
-
-          echo "--- Environment ---"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT"
-          echo "BUILD_PROFILE=$BUILD_PROFILE"
-          echo "API_BASE_URL=$API_BASE_URL"
-          echo "GRADLE_USER_HOME=${GRADLE_USER_HOME:-}"
-          echo "GRADLE_OPTS=${GRADLE_OPTS:-}"
-
-          BUILD_LOG="artifacts/android-debug-build.log"
-
-          echo
-          echo "========================================"
-          echo "Starting Android debug build"
-          echo "========================================"
-
-          set +e
-          bash tools/build_apk_debug.sh 2>&1 | tee "$BUILD_LOG"
-          BUILD_STATUS=${PIPESTATUS[0]}
-          set -e
-
-          if [ "$BUILD_STATUS" -ne 0 ]; then
-            echo
-            echo "========================================"
-            echo "ANDROID DEBUG BUILD FAILED"
-            echo "exit_code=$BUILD_STATUS"
-            echo "========================================"
-
-            echo
-            echo "--- Gradle / Flutter failure markers ---"
-
-            grep -nE \
-              'FAILURE:|What went wrong:|What failed:|Execution failed|Caused by:|error:|ERROR:|BUILD FAILED|Could not|Unable to|Exception' \
-              "$BUILD_LOG" | tail -n 300 || true
-
-            echo
-            echo "--- Last 500 log lines ---"
-            tail -n 500 "$BUILD_LOG"
-
-            echo
-            echo "--- Gradle version ---"
-
-            if [ -d android ]; then
-              (
-                cd android
-                ./gradlew --version || true
-              )
-            fi
-
-            echo
-            echo "--- Generated APK directory ---"
-
-            find build/app/outputs/flutter-apk \
-              -maxdepth 2 \
-              -type f \
-              -printf '%p %s bytes\n' 2>/dev/null || true
-
-            exit "$BUILD_STATUS"
-          fi
-
-          test -s "$BUILD_LOG"
-
-          echo
-          echo "ANDROID_DEBUG_BUILD_PASS"
-          echo "ANDROID_DEBUG_BUILD_LOG=$BUILD_LOG"
-
-      - name: Verify canonical Android output
+      - name: Dispatch full production release
+        if: ${{ env.MODE == 'release' }}
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
 
-          APK="build/app/outputs/flutter-apk/app-debug.apk"
-
-          test -s "$APK" || {
-            echo "Canonical Flutter APK is missing: $APK" >&2
-            find build -maxdepth 6 -type f -name '*.apk' -print >&2 || true
+          test "$CONFIRM" = "release" || {
+            echo "ERROR: mode=release requires confirm=release." >&2
             exit 1
           }
 
-          APK_SIZE="$(stat -c '%s' "$APK" 2>/dev/null || stat -f '%z' "$APK")"
+          gh workflow run production-release.yml \
+            --ref "${GITHUB_REF_NAME}" \
+            -f confirm=release
 
-          test "$APK_SIZE" -gt 1000000 || {
-            echo "Debug APK is implausibly small: $APK_SIZE bytes" >&2
-            exit 1
-          }
-
-          echo "CANONICAL_ANDROID_OUTPUT_PASS"
-          echo "apk=$APK"
-          echo "size_bytes=$APK_SIZE"
-
-      - name: Collect bootstrap evidence
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p artifacts
-
-          {
-            echo "commit=${GITHUB_SHA}"
-            echo "run_id=${GITHUB_RUN_ID}"
-            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
-            echo "workflow=${GITHUB_WORKFLOW}"
-            echo "ref=${GITHUB_REF}"
-            echo "repository=${GITHUB_REPOSITORY}"
-            echo "runner_os=${RUNNER_OS}"
-            echo "runner_arch=${RUNNER_ARCH}"
-            echo "node=$(node --version 2>/dev/null || true)"
-            echo "java=$(java -version 2>&1 | head -1 || true)"
-            echo "flutter=$(flutter --version 2>/dev/null | head -1 || true)"
-            echo "gradle=$(cd android && ./gradlew --version 2>/dev/null | grep '^Gradle ' | head -1 || true)"
-          } > artifacts/bootstrap-environment.txt
-
-          if [ -f pubspec.yaml ]; then
-            cp pubspec.yaml artifacts/pubspec.yaml
-          fi
-
-          if [ -f pubspec.lock ]; then
-            cp pubspec.lock artifacts/pubspec.lock
-          fi
-
-          if [ -f backend/sbom.json ]; then
-            cp backend/sbom.json artifacts/sbom.json
-          fi
-
-          if [ -f backend/artifacts/sbom.json ]; then
-            cp backend/artifacts/sbom.json artifacts/sbom.json
-          fi
-
-          if [ -d backend/artifacts ]; then
-            cp -a backend/artifacts/. artifacts/ 2>/dev/null || true
-          fi
-
-          if [ -d docs ]; then
-            cp -a docs/. artifacts/docs/ 2>/dev/null || true
-          fi
-
-          if [ -f android/build.gradle.kts.before-bootstrap-fix ]; then
-            cp android/build.gradle.kts.before-bootstrap-fix \
-              artifacts/android-build.gradle.kts.before-bootstrap-fix
-          fi
-
-          if [ -f android/build.gradle.kts ]; then
-            cp android/build.gradle.kts \
-              artifacts/android-build.gradle.kts
-          fi
-
-          echo
-          echo "========================================"
-          echo "BOOTSTRAP EVIDENCE"
-          echo "========================================"
-
-          find artifacts -maxdepth 4 -type f -print | sort
-
-      - name: Upload bootstrap evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: hope-v8-bootstrap-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/
-          if-no-files-found: warn
-          retention-days: 14
+          echo "PRODUCTION release workflow dispatched on ${GITHUB_REF_NAME}."
+          echo "Production release will run its staging certification gate first."
