@@ -101,6 +101,37 @@ jobs:
 
           echo "Project root: ${SRC#$EXTRACT/}"
 
+          # The archive is allowed to supply CI/CD only after its canonical
+          # workflow set has been validated. This prevents an incomplete ZIP
+          # from leaving the checkout without required workflows.
+          required_workflows=(
+            ".github/workflows/bootstrap.yml"
+            ".github/workflows/main.yml"
+            ".github/workflows/device-integration.yml"
+            ".github/workflows/staging-certification.yml"
+            ".github/workflows/production-release.yml"
+          )
+
+          for workflow in "${required_workflows[@]}"; do
+            test -s "$SRC/$workflow" || {
+              echo "Archive is missing required workflow: $workflow" >&2
+              exit 1
+            }
+          done
+
+          test -s "$SRC/.github/workflows/production-release.yml" || exit 1
+          for production_secret in \
+            ACCESS_TOKEN_SECRET_PRODUCTION \
+            REFRESH_TOKEN_SECRET_PRODUCTION \
+            PAYMENT_WEBHOOK_SECRET_PRODUCTION \
+            RESET_TOKEN_DELIVERY_SECRET_PRODUCTION \
+            ALLOWED_CORS_ORIGINS_PRODUCTION; do
+            grep -Fq "$production_secret" "$SRC/.github/workflows/production-release.yml" || {
+              echo "Production release security contract missing: $production_secret" >&2
+              exit 1
+            }
+          done
+
           rm -rf \
             "$ROOT/backend" "$ROOT/lib" "$ROOT/android" "$ROOT/ios" \
             "$ROOT/web" "$ROOT/assets" "$ROOT/test" "$ROOT/integration_test" \
@@ -117,7 +148,13 @@ jobs:
             cp -a "$item" "$ROOT/"
           done
 
-          echo 'PASS: project imported without replacing repository CI/CD policy.'
+          # Copy only the validated canonical workflow directory. Do not copy
+          # arbitrary archive metadata into .github. The repository's .git is
+          # never touched.
+          mkdir -p "$ROOT/.github/workflows"
+          cp -a "$SRC/.github/workflows/." "$ROOT/.github/workflows/"
+
+          echo 'PASS: validated project and canonical CI/CD imported safely.'
 
       - name: Verify canonical workflow set
         shell: bash
