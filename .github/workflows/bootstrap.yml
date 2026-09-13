@@ -59,8 +59,6 @@ jobs:
 
           echo "Using archive: $(basename "$ZIP")"
 
-          # Reject path traversal and repository metadata.
-          # .github is allowed inside an archive but is NEVER imported.
           while IFS= read -r entry; do
             entry="${entry//\\//}"
 
@@ -110,8 +108,6 @@ jobs:
 
           echo "Project root: ${SRC#$EXTRACT/}"
 
-          # Remove previously imported project payload only.
-          # The GitHub controller itself remains untouched.
           rm -rf \
             "$ROOT/backend" \
             "$ROOT/lib" \
@@ -123,8 +119,6 @@ jobs:
             "$ROOT/integration_test" \
             "$ROOT/docs"
 
-          # Import project contents while explicitly excluding .github.
-          # GitHub remains the single source of truth for workflows.
           for item in \
             "$SRC"/* \
             "$SRC"/.[!.]* \
@@ -146,7 +140,7 @@ jobs:
           echo 'PASS: project imported; GitHub controller preserved.'
 
       - name: Setup Node 24
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4d2c9d7362e8dae4041e # v6.4.0
         with:
           node-version: '24'
           cache: npm
@@ -188,15 +182,11 @@ jobs:
             }
           done
 
-          # There must be exactly one Bootstrap controller:
-          # the one committed under .github/workflows.
           test -f .github/workflows/bootstrap.yml || {
             echo 'Missing GitHub Bootstrap controller.' >&2
             exit 1
           }
 
-          # Internal Bootstrap controllers are forbidden.
-          # Missing directories are harmless.
           duplicate_bootstrap="$(
             find tools backend lib test integration_test \
               -type f \
@@ -238,26 +228,40 @@ jobs:
           set -Eeuo pipefail
 
           ROUTES_DIR="src/routes"
+          REPORT="$RUNNER_TEMP/hope-route-db-refs.txt"
 
           test -d "$ROUTES_DIR" || {
             echo "Missing routes directory: $ROUTES_DIR" >&2
             exit 1
           }
 
-          refs="$(
-            grep -RInE \
-              --include='*.js' \
-              'db\.(collection|insert|update|touch|reset|save)' \
-              "$ROUTES_DIR" \
-              2>/dev/null |
-            wc -l |
-            tr -d ' '
-          )"
+          : > "$REPORT"
 
-          [ "$refs" -eq 0 ] || {
+          set +e
+
+          grep -RInE \
+            --include='*.js' \
+            'db\.(collection|insert|update|touch|reset|save)' \
+            "$ROUTES_DIR" \
+            > "$REPORT" \
+            2>/dev/null
+
+          grep_status=$?
+
+          set -e
+
+          if [ "$grep_status" -gt 1 ]; then
+            echo "Persistence boundary grep failed with exit code $grep_status" >&2
+            exit "$grep_status"
+          fi
+
+          refs="$(wc -l < "$REPORT" | tr -d ' ')"
+
+          if [ "$refs" -ne 0 ]; then
             echo "Route persistence boundary broken: $refs direct db refs" >&2
+            cat "$REPORT" >&2
             exit 1
-          }
+          fi
 
           echo 'PASS: route persistence boundary = 0 direct db.* refs'
 
