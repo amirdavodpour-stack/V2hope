@@ -1,328 +1,231 @@
-name: HOPE ZIP Release/Staging Bootstrap v3
+name: Staging Certification
 
 on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: "Import the final ZIP and run staging or release"
+  workflow_call:
+    outputs:
+      certification_status:
+        description: Whether every staging gate passed for the certified commit
+        value: ${{ jobs.staging-certification.outputs.certification_status }}
+      certification_sha:
+        description: SHA of the commit that passed staging certification
+        value: ${{ jobs.staging-certification.outputs.certification_sha }}
+      certification_attempt:
+        description: Attempt that produced the certification evidence
+        value: ${{ jobs.staging-certification.outputs.certification_attempt }}
+      certification_run_id:
+        description: Run id that produced the certification evidence
+        value: ${{ jobs.staging-certification.outputs.certification_run_id }}
+    secrets:
+      STAGING_BASE_URL:
+        description: HTTPS base URL of the real external staging deployment used for the product workflow and performance gates
         required: true
-        type: choice
-        options:
-          - staging
-          - release
-        default: staging
-      confirm:
-        description: "Type release only when mode=release"
+      NOTIFICATION_PUSH_URL:
         required: false
-        type: string
+      NOTIFICATION_EMAIL_URL:
+        required: false
+      NOTIFICATION_PROVIDER_TOKEN:
+        required: false
+  workflow_dispatch:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
-  group: hope-zip-bootstrap-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  bootstrap:
+  staging-certification:
     runs-on: ubuntu-latest
+    outputs:
+      certification_status: ${{ steps.emit_status.outputs.status }}
+      certification_sha: ${{ github.sha }}
+      certification_attempt: ${{ github.run_attempt }}
+      certification_run_id: ${{ github.run_id }}
     env:
-      ZIP_FILE: HOPE-V8-RELEASE-STAGING-FINAL.zip
-      MODE: ${{ inputs.mode }}
-      CONFIRM: ${{ inputs.confirm }}
-
+      STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+      NOTIFICATION_PUSH_URL: ${{ secrets.NOTIFICATION_PUSH_URL }}
+      NOTIFICATION_EMAIL_URL: ${{ secrets.NOTIFICATION_EMAIL_URL }}
+      NOTIFICATION_PROVIDER_TOKEN: ${{ secrets.NOTIFICATION_PROVIDER_TOKEN }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s
+          --health-retries 10
+      minio:
+        image: quay.io/minio/aistor/minio:RELEASE.2026-08-07T18-34-35Z
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        command: server /data
+        options: >-
+          --health-cmd "curl -fsS http://127.0.0.1:9000/minio/health/live || exit 1"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Resource capacity guard
+        run: bash tools/ci-resource-guard.sh
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          fetch-depth: 0
-
-      - name: Require workflow-capable repository token
-        shell: bash
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.2'
+          cache: true
+      - name: Provision Android CI toolchain
+        run: bash tools/ci-android-toolchain.sh
+      - name: Runtime certification preflight
+        run: bash ../tools/runtime-certification-preflight.sh
+        working-directory: backend
+      - name: Backend install
+        run: npm ci
+        working-directory: backend
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Verify pubspec lock freshness
+        run: bash tools/verify-pubspec-lock-fresh.sh
+      - name: Flutter unit tests
+        run: flutter test --no-pub
+      - name: Postgres runtime probe
+        id: postgres_probe
+        run: npm run test:postgres
+        working-directory: backend
         env:
-          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-          test -n "$REPO_WORKFLOW_TOKEN" || {
-            echo "ERROR: repository secret REPO_WORKFLOW_TOKEN is required." >&2
-            echo "It must be a token authorized to push repository workflow files." >&2
-            exit 1
-          }
-
-      - name: Import final HOPE project and preserve active bootstrap
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          test -f "$ZIP_FILE" || {
-            echo "ERROR: $ZIP_FILE was not found at repository root." >&2
-            exit 1
-          }
-
-          test -f .github/workflows/bootstrap.yml || {
-            echo "ERROR: active .github/workflows/bootstrap.yml is missing before import." >&2
-            exit 1
-          }
-
-          BOOTSTRAP_BACKUP="$RUNNER_TEMP/bootstrap.yml"
-          cp .github/workflows/bootstrap.yml "$BOOTSTRAP_BACKUP"
-
-          TMP="$(mktemp -d)"
-          trap 'rm -rf "$TMP"' EXIT
-
-          unzip -q "$ZIP_FILE" -d "$TMP"
-
-          # Accept either a repository-root ZIP or a single top-level wrapper.
-          if [ ! -f "$TMP/pubspec.yaml" ]; then
-            roots=()
-            while IFS= read -r -d '' d; do
-              roots+=("$d")
-            done < <(find "$TMP" -mindepth 1 -maxdepth 1 -type d -print0)
-
-            if [ "${#roots[@]}" -eq 1 ] && [ -f "${roots[0]}/pubspec.yaml" ]; then
-              TMP="${roots[0]}"
-            else
-              echo "ERROR: final ZIP does not resolve to a Flutter project root containing pubspec.yaml." >&2
-              exit 1
-            fi
-          fi
-
-          test -f "$TMP/pubspec.yaml"
-          test -d "$TMP/.github/workflows"
-
-          # Import all project files, including final workflows, except the
-          # active bootstrap.yml. IMPORTANT: do not copy the workflows directory
-          # as a whole, because that would overwrite the excluded bootstrap.
-          while IFS= read -r -d '' item; do
-            rel="${item#"$TMP"/}"
-
-            case "$rel" in
-              .git|.git/*)
-                continue
-                ;;
-              .github/workflows|.github/workflows/)
-                continue
-                ;;
-              .github/workflows/bootstrap.yml)
-                continue
-                ;;
-            esac
-
-            target="./$rel"
-            rm -rf -- "$target"
-            mkdir -p "$(dirname "$target")"
-            cp -a "$item" "$target"
-          done < <(find "$TMP" -mindepth 1 -print0)
-
-          # Never allow the ZIP to replace the active bootstrap.
-          cp "$BOOTSTRAP_BACKUP" .github/workflows/bootstrap.yml
-
-          # Remove any malformed nested workflow tree from a previous import.
-          rm -rf .github/workflows/.github
-
-          chmod +x android/gradlew
-          find tools -type f -name '*.sh' -exec chmod +x {} +
-
-          echo "Final project imported."
-          echo "Active bootstrap preserved."
-          git status --short
-
-      - name: Validate final project and workflows
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          test -f pubspec.yaml
-          test -f android/gradlew
-          test -x android/gradlew
-
-          python3 tools/check-workflows.py
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          root = Path(".github/workflows")
-          required = {
-              "bootstrap.yml",
-              "staging-certification.yml",
-              "production-release.yml",
-          }
-
-          files = sorted(root.glob("*.yml")) + sorted(root.glob("*.yaml"))
-          names = {p.name for p in files}
-          missing = sorted(required - names)
-          if missing:
-              raise SystemExit(
-                  "Missing required active workflows: " + ", ".join(missing)
-              )
-
-          nested = list(root.glob("**/.github/workflows/*"))
-          if nested:
-              raise SystemExit(
-                  "Malformed nested workflow tree detected: "
-                  + ", ".join(str(p) for p in nested)
-              )
-
-          for path in files:
-              with path.open(encoding="utf-8") as fh:
-                  yaml.safe_load(fh)
-              print(f"YAML OK: {path}")
-
-          print("ACTIVE_WORKFLOW_VALIDATION_PASS")
-          PY
-
-      - name: Verify active bootstrap is unchanged
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          cmp -s "$RUNNER_TEMP/bootstrap.yml" .github/workflows/bootstrap.yml || {
-            echo "ERROR: active bootstrap differs from its pre-import byte-for-byte backup." >&2
-            exit 1
-          }
-
-          if git diff --quiet -- .github/workflows/bootstrap.yml; then
-            echo "BOOTSTRAP_PRESERVED_PASS"
-          else
-            echo "ERROR: active .github/workflows/bootstrap.yml changed." >&2
-            exit 1
-          fi
-
-      - name: Commit final project
-        shell: bash
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          REQUIRE_INTEGRATION: '1'
+      - name: S3 runtime probe
+        id: s3_probe
+        run: S3_INTEGRATION=1 npm run test:s3
+        working-directory: backend
         env:
-          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No repository changes needed."
-            echo "IMPORT_COMMIT_SKIPPED_PASS"
-          else
-            git commit -m "Import final HOPE release staging project"
-
-            # actions/checkout configures GITHUB_TOKEN as an http.extraheader.
-            # Remove that credential before using the dedicated repository token.
-            git config --local --unset-all http.https://github.com/.extraheader || true
-
-            # Fail clearly if the dedicated token was not injected.
-            test -n "$REPO_WORKFLOW_TOKEN" || {
-              echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
-              exit 1
-            }
-
-            # Use the dedicated token explicitly for the push.
-            git remote set-url origin "https://x-access-token:${REPO_WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-
-            # Verify the authenticated identity without printing the token.
-            AUTH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}'               -H "Authorization: Bearer ${REPO_WORKFLOW_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/user")"
-            case "$AUTH_STATUS" in
-              200|204)
-                echo "REPO_TOKEN_AUTH_PASS"
-                ;;
-              *)
-                echo "ERROR: REPO_WORKFLOW_TOKEN authentication failed (HTTP $AUTH_STATUS)." >&2
-                exit 1
-                ;;
-            esac
-
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-            echo "IMPORT_PUSH_PASS"
-          fi
-
-      - name: Verify pushed revision
-        shell: bash
+          STAGING_S3_ENDPOINT: http://127.0.0.1:9000
+          S3_ENDPOINT: ${{ env.STAGING_S3_ENDPOINT }}
+          S3_REQUIRE_HTTPS: '0'
+          AWS_ACCESS_KEY_ID: minioadmin
+          AWS_SECRET_ACCESS_KEY: minioadmin
+      - name: Staging performance smoke
+        id: perf_probe
+        run: node tools/perf-smoke.mjs && test -s perf-smoke.json
+        working-directory: backend
         env:
-          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
-        run: |
-          set -Eeuo pipefail
-
-          git fetch origin "${GITHUB_REF_NAME}"
-          LOCAL="$(git rev-parse HEAD)"
-          REMOTE="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
-
-          test "$LOCAL" = "$REMOTE" || {
-            echo "ERROR: pushed revision does not match local revision." >&2
-            echo "local=$LOCAL" >&2
-            echo "remote=$REMOTE" >&2
-            exit 1
-          }
-
-          echo "PUSHED_REVISION_PASS=$REMOTE"
-
-      - name: Dispatch staging certification
-        if: ${{ env.MODE == 'staging' }}
-        shell: bash
+          PERF_BASE_URL: ${{ env.STAGING_BASE_URL }}
+          PERF_REQUESTS: '500'
+          PERF_CONCURRENCY: '50'
+          PERF_P95_BUDGET_MS: '500'
+          PERF_P99_BUDGET_MS: '1000'
+          PERF_MAX_5XX_RATE: '0.01'
+      - name: Staging product workflow
+        id: product_workflow
+        run: node ../tools/staging-product-smoke.mjs
+        working-directory: backend
         env:
-          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+          STAGING_BASE_URL: ${{ env.STAGING_BASE_URL }}
+      - name: Staging external integration gate
+        id: provider_integration
+        run: npm run test:provider
+        working-directory: backend
+      - name: Probe notification delivery
+        id: notification_delivery
+        if: ${{ env.NOTIFICATION_PROVIDER_TOKEN != '' && (env.NOTIFICATION_PUSH_URL != '' || env.NOTIFICATION_EMAIL_URL != '') }}
         run: |
-          set -Eeuo pipefail
-
-          test -n "$GH_TOKEN" || {
-            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
-            exit 1
-          }
-
-          echo "Waiting for staging-certification.yml to become visible on the default branch..."
-          for attempt in $(seq 1 30); do
-            if gh workflow view staging-certification.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              echo "ERROR: staging-certification.yml is still not visible to the Actions API after push." >&2
-              gh workflow list --repo "$GITHUB_REPOSITORY" || true
-              exit 1
-            fi
-            sleep 2
-          done
-
-          gh workflow run staging-certification.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "${GITHUB_REF_NAME}"
-
-          echo "STAGING_DISPATCHED_PASS"
-
-      - name: Dispatch full production release
-        if: ${{ env.MODE == 'release' }}
-        shell: bash
+          set -o pipefail
+          node ../tools/staging-notification-delivery.mjs | tee "$RUNNER_TEMP/staging-notification-delivery.log"
+        working-directory: backend
+      - name: Android quality gates
+        timeout-minutes: 30
         env:
-          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+          API_BASE_URL: ${{ env.STAGING_BASE_URL }}
+          BUILD_PROFILE: pilot
+        run: bash tools/build_apk_debug.sh
+      - name: Android emulator certification
+        id: device_certification
+        uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
+        with:
+          api-level: 35
+          arch: x86_64
+          script: |
+            flutter test --no-pub integration_test
+        env:
+          API_BASE_URL_STAGING: ${{ env.STAGING_BASE_URL }}
+          CI_DEVICE_INTEGRATION: 'true'
+      - name: Provision isolated DR target database
         run: |
-          set -Eeuo pipefail
-
-          test "$CONFIRM" = "release" || {
-            echo "ERROR: mode=release requires confirm=release." >&2
-            exit 1
-          }
-
-          test -n "$GH_TOKEN" || {
-            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
-            exit 1
-          }
-
-          echo "Waiting for production-release.yml to become visible on the default branch..."
-          for attempt in $(seq 1 30); do
-            if gh workflow view production-release.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" -eq 30 ]; then
-              echo "ERROR: production-release.yml is still not visible to the Actions API after push." >&2
-              gh workflow list --repo "$GITHUB_REPOSITORY" || true
-              exit 1
-            fi
-            sleep 2
-          done
-
-          gh workflow run production-release.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "${GITHUB_REF_NAME}" \
-            -f confirm=release
-
-          echo "RELEASE_DISPATCHED_PASS"
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1             -c 'DROP DATABASE IF EXISTS hope_drill'             -c 'CREATE DATABASE hope_drill'
+      - name: DR restore drill
+        id: dr_drill
+        env:
+          SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope
+          DRILL_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/hope_drill
+          DRILL_WORK_DIR: /tmp/hope-dr-drill
+          DRILL_EVIDENCE_FILE: /tmp/hope-dr-drill/dr-restore-evidence.json
+        run: |
+          bash scripts/dr-restore-drill.sh
+          test -s "$DRILL_EVIDENCE_FILE"
+        working-directory: backend
+      - name: Runtime gate - postgres runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.postgres_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate postgres_runtime --command "npm run test:postgres" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - s3 runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.s3_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate s3_runtime --command "npm run test:s3" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - perf runtime
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.perf_probe.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate perf_run --command "node tools/perf-smoke.mjs" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - device certification
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.device_certification.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate device_certification --command "flutter test --no-pub integration_test" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - dr restore
+        if: ${{ always() }}
+        env:
+          GATE_RESULT: ${{ steps.dr_drill.outcome == 'success' && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate dr_restore --command "bash scripts/dr-restore-drill.sh" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Runtime gate - provider runtime
+        if: ${{ always() && steps.notification_delivery.conclusion != 'skipped' }}
+        env:
+          GATE_RESULT: ${{ (steps.product_workflow.outcome == 'success' && steps.provider_integration.outcome == 'success' && (steps.notification_delivery.outcome == 'success' || steps.notification_delivery.outcome == 'skipped')) && 'pass' || 'fail' }}
+        run: node tools/write-evidence.mjs --gate provider_runtime --command "staging product/provider integration" --result "$GATE_RESULT"
+        working-directory: backend
+      - name: Provider runtime note
+        run: echo "Final human receipt is attested by the provider, not by this run"
+      - name: Upload staging certification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-certification-evidence
+          path: ${{ runner.temp }}
+      - name: Staging operational gate
+        id: emit_status
+        if: ${{ always() }}
+        run: |
+          status=FAIL
+          [ "${{ steps.postgres_probe.outcome }}" = success ] &&           [ "${{ steps.s3_probe.outcome }}" = success ] &&           [ "${{ steps.perf_probe.outcome }}" = success ] &&           [ "${{ steps.product_workflow.outcome }}" = success ] &&           [ "${{ steps.provider_integration.outcome }}" = success ] &&           [ "${{ steps.device_certification.outcome }}" = success ] &&           [ "${{ steps.dr_drill.outcome }}" = success ] &&           ( [ "${{ steps.notification_delivery.outcome }}" = success ] || [ "${{ steps.notification_delivery.outcome }}" = skipped ] ) && status=PASS
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+      - name: Emit certification status
+        run: 'echo "Certification status: ${{ steps.emit_status.outputs.status }}"'
