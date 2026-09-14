@@ -1,0 +1,197 @@
+name: Bootstrap Repair - Backend Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "backend/src/config.js"
+      - "backend/package.json"
+      - "backend/Dockerfile"
+      - ".github/workflows/bootstrap-repair.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-repair-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repair-backend-runtime:
+    name: Repair and Verify Backend Runtime
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Verify backend files
+        working-directory: backend
+        run: |
+          set -euo pipefail
+
+          test -f package.json
+          test -f package-lock.json
+          test -f src/config.js
+          test -f Dockerfile
+          test -f entrypoint.sh
+
+      - name: Repair config version source
+        env:
+          CONFIG_FILE: backend/src/config.js
+        run: |
+          set -euo pipefail
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/src/config.js")
+          text = path.read_text(encoding="utf-8")
+
+          old = """const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+          const pubspecText = fs.readFileSync(path.join(projectRoot, 'pubspec.yaml'), 'utf8');
+          const hopeVersionMatch = pubspecText.match(/^version:\\s*([^\\r\\n]+)/m);
+          export const HOPE_VERSION = hopeVersionMatch?.[1]?.trim()?.split('+', 1)?.[0] || 'unknown';
+
+          const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+          """
+
+          new = """const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+          const packageJsonPath = path.join(backendRoot, 'package.json');
+          const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+          export const HOPE_VERSION =
+            String(process.env.HOPE_VERSION || packageJson.version || 'unknown')
+              .trim()
+              .split('+', 1)[0] || 'unknown';
+          """
+
+          if old in text:
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+              print("Repaired backend/src/config.js")
+          elif "path.join(projectRoot, 'pubspec.yaml')" in text:
+              raise SystemExit(
+                  "config.js still depends on pubspec.yaml, but its structure "
+                  "does not match the expected repair block. Manual review required."
+              )
+          else:
+              print("No pubspec.yaml runtime dependency found. No repair required.")
+          PY
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Syntax check backend
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          node --check src/config.js
+          node --check src/server.js
+
+      - name: Verify config loads without Flutter pubspec
+        working-directory: backend
+        run: |
+          set -euo pipefail
+
+          node --input-type=module <<'NODE'
+          const { HOPE_VERSION, config } = await import('./src/config.js');
+
+          if (!HOPE_VERSION || HOPE_VERSION === 'unknown') {
+            throw new Error(`Invalid HOPE_VERSION: ${HOPE_VERSION}`);
+          }
+
+          if (config.host !== '0.0.0.0') {
+            throw new Error(`Unexpected default host: ${config.host}`);
+          }
+
+          if (config.port !== 3000) {
+            throw new Error(`Unexpected default port: ${config.port}`);
+          }
+
+          console.log(`HOPE_VERSION=${HOPE_VERSION}`);
+          console.log(`HOST=${config.host}`);
+          console.log(`PORT=${config.port}`);
+          console.log("Backend config loaded successfully.");
+          NODE
+
+      - name: Verify Dockerfile contract
+        run: |
+          set -euo pipefail
+
+          grep -F 'COPY package*.json ./' backend/Dockerfile
+          grep -F 'COPY src ./src' backend/Dockerfile
+          grep -F 'CMD ["node", "src/server.js"]' backend/Dockerfile
+          grep -F 'http://127.0.0.1:3000/live' backend/Dockerfile
+
+      - name: Build backend Docker image
+        run: |
+          set -euo pipefail
+
+          docker build \
+            --file backend/Dockerfile \
+            --tag hope-api:bootstrap-repair \
+            backend
+
+      - name: Verify container does not require /pubspec.yaml
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            --entrypoint node \
+            hope-api:bootstrap-repair \
+            --input-type=module \
+            -e "import('./src/config.js').then(({HOPE_VERSION}) => { console.log('HOPE_VERSION=' + HOPE_VERSION); })"
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet -- backend/src/config.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No source change required."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Backend runtime repair changed config.js."
+            git diff -- backend/src/config.js
+          fi
+
+      - name: Commit backend runtime repair
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add backend/src/config.js
+          git commit -m "fix(backend): remove runtime dependency on root pubspec"
+          git push
+
+      - name: Final verification
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "BOOTSTRAP REPAIR PASSED"
+          echo "========================================"
+          echo "The backend no longer requires:"
+          echo "  /pubspec.yaml"
+          echo ""
+          echo "Version source:"
+          echo "  backend/package.json"
+          echo ""
+          echo "Docker build:"
+          echo "  PASSED"
+          echo ""
+          echo "Config import:"
+          echo "  PASSED"
+          echo "========================================"
