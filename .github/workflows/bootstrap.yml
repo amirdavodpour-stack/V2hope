@@ -270,6 +270,19 @@ jobs:
             exit 1
           }
 
+          echo "Waiting for staging-certification.yml to become visible on the default branch..."
+          for attempt in $(seq 1 30); do
+            if gh workflow view staging-certification.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "ERROR: staging-certification.yml is still not visible to the Actions API after push." >&2
+              gh workflow list --repo "$GITHUB_REPOSITORY" || true
+              exit 1
+            fi
+            sleep 2
+          done
+
           gh workflow run staging-certification.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "${GITHUB_REF_NAME}"
@@ -293,6 +306,19 @@ jobs:
             echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
             exit 1
           }
+
+          echo "Waiting for production-release.yml to become visible on the default branch..."
+          for attempt in $(seq 1 30); do
+            if gh workflow view production-release.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "ERROR: production-release.yml is still not visible to the Actions API after push." >&2
+              gh workflow list --repo "$GITHUB_REPOSITORY" || true
+              exit 1
+            fi
+            sleep 2
+          done
 
           gh workflow run production-release.yml \
             --repo "$GITHUB_REPOSITORY" \
