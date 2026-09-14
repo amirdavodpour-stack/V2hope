@@ -1,104 +1,368 @@
-name: HOPE Build Test APK
+name: HOPE ZIP Release/Staging Bootstrap v3
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Import the final ZIP and run staging or release"
+        required: true
+        type: choice
+        options:
+          - staging
+          - release
+        default: staging
+      confirm:
+        description: "Type release only when mode=release"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: hope-zip-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  workflow-lint:
+  bootstrap:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Lint workflow files (syntax + path + SHA pinning)
-        run: python3 tools/check-workflows.py
+    env:
+      ZIP_FILE: HOPE-V8-RELEASE-STAGING-FINAL.zip
+      MODE: ${{ inputs.mode }}
+      CONFIRM: ${{ inputs.confirm }}
 
-  ci:
-    runs-on: ubuntu-latest
-    needs: workflow-lint
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version: '3.47.2'
-          cache: true
-      - name: Verify API base URL secret
+          fetch-depth: 0
+
+      - name: Require workflow-capable repository token
+        shell: bash
+        env:
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
         run: |
-          if [ -z "$API_BASE_URL" ]; then echo "API_BASE_URL secret is required" >&2; exit 1; fi
-          case "$API_BASE_URL" in
-            https://*) ;;
-            *) echo "API_BASE_URL must use HTTPS" >&2; exit 1 ;;
-          esac
-          printf '%s\n' "$API_BASE_URL" | grep -Eq '^https://[^[:space:]]+$' || {
-            echo "API_BASE_URL contains whitespace or is malformed" >&2
+          set -Eeuo pipefail
+          test -n "$REPO_WORKFLOW_TOKEN" || {
+            echo "ERROR: repository secret REPO_WORKFLOW_TOKEN is required." >&2
+            echo "It must be a token authorized to push repository workflow files." >&2
             exit 1
           }
-        env:
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-      - name: Backend install
-        run: npm ci
-        working-directory: backend
-      - name: Legacy/SQL test-mode guard (F3, warn-only)
-        run: node tools/guard-legacy-test-env.mjs check:all
-        working-directory: backend
-      - name: Backend quality gates
-        run: npm run check:all
-        working-directory: backend
-      - name: Flutter dependencies
-        run: flutter pub get
-      - name: Verify pubspec lock freshness
-        run: bash tools/verify-pubspec-lock-fresh.sh
-      - name: Flutter static and test gate
-        id: flutter_gate
+
+      - name: Import final HOPE project and preserve active bootstrap
+        shell: bash
         run: |
-          flutter analyze
-          flutter test --no-pub
-      - name: Backend test quality contract
-        run: NODE_ENV=test node --test tests/test-quality-contract.test.mjs
-        working-directory: backend
-      - name: Backend coverage gate
-        run: BACKEND_LINE_COVERAGE_MIN=70 BACKEND_BRANCH_COVERAGE_MIN=60 BACKEND_FUNCTION_COVERAGE_MIN=65 npm run test:coverage-gate
-        working-directory: backend
-      - name: Flutter coverage gate
-        run: FLUTTER_LINE_COVERAGE_MIN=65 bash tools/test_flutter_coverage.sh
-      - name: Upload Flutter coverage
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: flutter-coverage
-          retention-days: 14
-          if-no-files-found: warn
-          path: coverage/lcov.info
-      - name: npm audit gate
-        id: npm_audit
+          set -Eeuo pipefail
+
+          test -f "$ZIP_FILE" || {
+            echo "ERROR: $ZIP_FILE was not found at repository root." >&2
+            exit 1
+          }
+
+          test -f .github/workflows/bootstrap.yml || {
+            echo "ERROR: active .github/workflows/bootstrap.yml is missing before import." >&2
+            exit 1
+          }
+
+          BOOTSTRAP_BACKUP="$RUNNER_TEMP/bootstrap.yml"
+          cp .github/workflows/bootstrap.yml "$BOOTSTRAP_BACKUP"
+
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+
+          unzip -q "$ZIP_FILE" -d "$TMP"
+
+          # Accept either a repository-root ZIP or a single top-level wrapper.
+          if [ ! -f "$TMP/pubspec.yaml" ]; then
+            roots=()
+            while IFS= read -r -d '' d; do
+              roots+=("$d")
+            done < <(find "$TMP" -mindepth 1 -maxdepth 1 -type d -print0)
+
+            if [ "${#roots[@]}" -eq 1 ] && [ -f "${roots[0]}/pubspec.yaml" ]; then
+              TMP="${roots[0]}"
+            else
+              echo "ERROR: final ZIP does not resolve to a Flutter project root containing pubspec.yaml." >&2
+              exit 1
+            fi
+          fi
+
+          test -f "$TMP/pubspec.yaml"
+          test -d "$TMP/.github/workflows"
+
+          # Import all project files, including final workflows, except the
+          # active bootstrap.yml. IMPORTANT: do not copy the workflows directory
+          # as a whole, because that would overwrite the excluded bootstrap.
+          while IFS= read -r -d '' item; do
+            rel="${item#"$TMP"/}"
+
+            case "$rel" in
+              .git|.git/*)
+                continue
+                ;;
+              .github/workflows|.github/workflows/)
+                continue
+                ;;
+              .github/workflows/bootstrap.yml)
+                continue
+                ;;
+            esac
+
+            target="./$rel"
+            rm -rf -- "$target"
+            mkdir -p "$(dirname "$target")"
+            cp -a "$item" "$target"
+          done < <(find "$TMP" -mindepth 1 -print0)
+
+          # Never allow the ZIP to replace the active bootstrap.
+          cp "$BOOTSTRAP_BACKUP" .github/workflows/bootstrap.yml
+
+          # The evidence writer requires --command for every gate.
+          # Normalize the two affected legacy calls in the imported main.yml.
+          if [ -f .github/workflows/main.yml ]; then
+            python3 - <<'PY'
+from pathlib import Path
+p = Path(".github/workflows/main.yml")
+s = p.read_text()
+s = s.replace(
+    'node tools/write-evidence.mjs --gate flutter_toolchain --result "$GATE_RESULT"',
+    'node tools/write-evidence.mjs --gate flutter_toolchain --command "flutter toolchain validation" --result "$GATE_RESULT"',
+)
+s = s.replace(
+    'node tools/write-evidence.mjs --gate npm_audit --result "$result"',
+    'node tools/write-evidence.mjs --gate npm_audit --command "npm audit" --result "$result"',
+)
+p.write_text(s)
+PY
+          fi
+
+
+          # Remove any malformed nested workflow tree from a previous import.
+          rm -rf .github/workflows/.github
+
+          chmod +x android/gradlew
+          find tools -type f -name '*.sh' -exec chmod +x {} +
+
+          echo "Final project imported."
+          echo "Active bootstrap preserved."
+          git status --short
+
+      - name: Validate final project and workflows
+        shell: bash
         run: |
-          set +e
-          npm audit --audit-level=high
-          status=$?
-          echo "result=$status" >> "$GITHUB_OUTPUT"
-          exit "$status"
-        working-directory: backend
-      - name: Runtime gate - flutter toolchain
-        if: ${{ always() }}
+          set -Eeuo pipefail
+
+          test -f pubspec.yaml
+          test -f android/gradlew
+          test -x android/gradlew
+
+          python3 tools/check-workflows.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          root = Path(".github/workflows")
+          required = {
+              "bootstrap.yml",
+              "staging-certification.yml",
+              "production-release.yml",
+          }
+
+          files = sorted(root.glob("*.yml")) + sorted(root.glob("*.yaml"))
+          names = {p.name for p in files}
+          missing = sorted(required - names)
+          if missing:
+              raise SystemExit(
+                  "Missing required active workflows: " + ", ".join(missing)
+              )
+
+          nested = list(root.glob("**/.github/workflows/*"))
+          if nested:
+              raise SystemExit(
+                  "Malformed nested workflow tree detected: "
+                  + ", ".join(str(p) for p in nested)
+              )
+
+          for path in files:
+              with path.open(encoding="utf-8") as fh:
+                  yaml.safe_load(fh)
+              print(f"YAML OK: {path}")
+
+          print("ACTIVE_WORKFLOW_VALIDATION_PASS")
+          PY
+
+      - name: Validate evidence writer contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          bad=0
+          while IFS= read -r line; do
+            case "$line" in
+              *write-evidence.mjs\ --gate*)
+                case "$line" in
+                  *--command*) ;;
+                  *) echo "ERROR: missing --command: $line" >&2; bad=1 ;;
+                esac
+                ;;
+            esac
+          done < <(grep -RIn --include='*.yml' --include='*.yaml' 'write-evidence.mjs --gate' .github/workflows || true)
+
+          test "$bad" -eq 0
+          echo "EVIDENCE_WRITER_CONTRACT_PASS"
+
+      - name: Verify active bootstrap is unchanged
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          cmp -s "$RUNNER_TEMP/bootstrap.yml" .github/workflows/bootstrap.yml || {
+            echo "ERROR: active bootstrap differs from its pre-import byte-for-byte backup." >&2
+            exit 1
+          }
+
+          if git diff --quiet -- .github/workflows/bootstrap.yml; then
+            echo "BOOTSTRAP_PRESERVED_PASS"
+          else
+            echo "ERROR: active .github/workflows/bootstrap.yml changed." >&2
+            exit 1
+          fi
+
+      - name: Commit final project
+        shell: bash
         env:
-          GATE_RESULT: ${{ steps.flutter_gate.outcome == 'success' && 'pass' || 'fail' }}
-        run: node tools/write-evidence.mjs --gate flutter_toolchain --result "$GATE_RESULT"
-        working-directory: backend
-      - name: Record npm audit evidence
-        if: ${{ always() }}
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No repository changes needed."
+            echo "IMPORT_COMMIT_SKIPPED_PASS"
+          else
+            git commit -m "Import final HOPE release staging project"
+
+            # actions/checkout configures GITHUB_TOKEN as an http.extraheader.
+            # Remove that credential before using the dedicated repository token.
+            git config --local --unset-all http.https://github.com/.extraheader || true
+
+            # Fail clearly if the dedicated token was not injected.
+            test -n "$REPO_WORKFLOW_TOKEN" || {
+              echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
+              exit 1
+            }
+
+            # Use the dedicated token explicitly for the push.
+            git remote set-url origin "https://x-access-token:${REPO_WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+            # Verify the authenticated identity without printing the token.
+            AUTH_STATUS="$(curl -sS -o /dev/null -w '%{http_code}'               -H "Authorization: Bearer ${REPO_WORKFLOW_TOKEN}"               -H "Accept: application/vnd.github+json"               "https://api.github.com/user")"
+            case "$AUTH_STATUS" in
+              200|204)
+                echo "REPO_TOKEN_AUTH_PASS"
+                ;;
+              *)
+                echo "ERROR: REPO_WORKFLOW_TOKEN authentication failed (HTTP $AUTH_STATUS)." >&2
+                exit 1
+                ;;
+            esac
+
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "IMPORT_PUSH_PASS"
+          fi
+
+      - name: Verify pushed revision
+        shell: bash
         env:
-          result: ${{ steps.npm_audit.outputs.result }}
-        run: node tools/write-evidence.mjs --gate npm_audit --result "$result"
-        working-directory: backend
+          REPO_WORKFLOW_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          git fetch origin "${GITHUB_REF_NAME}"
+          LOCAL="$(git rev-parse HEAD)"
+          REMOTE="$(git rev-parse "origin/${GITHUB_REF_NAME}")"
+
+          test "$LOCAL" = "$REMOTE" || {
+            echo "ERROR: pushed revision does not match local revision." >&2
+            echo "local=$LOCAL" >&2
+            echo "remote=$REMOTE" >&2
+            exit 1
+          }
+
+          echo "PUSHED_REVISION_PASS=$REMOTE"
+
+      - name: Dispatch staging certification
+        if: ${{ env.MODE == 'staging' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          test -n "$GH_TOKEN" || {
+            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
+            exit 1
+          }
+
+          echo "Waiting for staging-certification.yml to become visible on the default branch..."
+          for attempt in $(seq 1 30); do
+            if gh workflow view staging-certification.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "ERROR: staging-certification.yml is still not visible to the Actions API after push." >&2
+              gh workflow list --repo "$GITHUB_REPOSITORY" || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          gh workflow run staging-certification.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "${GITHUB_REF_NAME}"
+
+          echo "STAGING_DISPATCHED_PASS"
+
+      - name: Dispatch full production release
+        if: ${{ env.MODE == 'release' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.REPO_WORKFLOW_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          test "$CONFIRM" = "release" || {
+            echo "ERROR: mode=release requires confirm=release." >&2
+            exit 1
+          }
+
+          test -n "$GH_TOKEN" || {
+            echo "ERROR: REPO_WORKFLOW_TOKEN is empty or unavailable." >&2
+            exit 1
+          }
+
+          echo "Waiting for production-release.yml to become visible on the default branch..."
+          for attempt in $(seq 1 30); do
+            if gh workflow view production-release.yml --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "ERROR: production-release.yml is still not visible to the Actions API after push." >&2
+              gh workflow list --repo "$GITHUB_REPOSITORY" || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          gh workflow run production-release.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "${GITHUB_REF_NAME}" \
+            -f confirm=release
+
+          echo "RELEASE_DISPATCHED_PASS"
